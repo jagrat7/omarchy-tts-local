@@ -2634,12 +2634,31 @@ class CancelledSpeechTests(unittest.TestCase):
         self.assertNotEqual(self.status_of("mpvlike"), "failing",
                             "a stopped provider was recorded as broken")
 
+    def test_stopping_speech_writes_nothing_to_stderr(self):
+        # setsid --wait reports a child killed by a signal ("did not exit
+        # normally"), and the panel shows any stderr as an error.
+        self.write_provider("killable", "cat > /dev/null\nsleep 30 &\nwait $!")
+        speaking = subprocess.Popen([SPEAK, "--provider", "killable"],
+                                    stdin=subprocess.PIPE, text=True, env=self.env,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        speaking.stdin.write("Interrupt me.\n")
+        speaking.stdin.close()
+        time.sleep(1.5)
+        subprocess.run([SPEAK, "--stop"], env=self.env, capture_output=True)
+        _, stderr = speaking.communicate(timeout=30)
+        self.assertEqual(stderr, "")
+
     def test_a_genuine_failure_is_still_recorded(self):
         self.write_provider("brokenlike", "cat > /dev/null; exit 4")
         subprocess.run([SPEAK, "--provider", "brokenlike"], input="Hello.",
                        text=True, env=self.env, capture_output=True)
         self.assertEqual(self.status_of("brokenlike"), "failing",
                          "an uncancelled failure must still mark the provider")
+        self.write_provider("noisy", "cat > /dev/null; echo 'model missing' >&2; exit 4")
+        result = subprocess.run([SPEAK, "--provider", "noisy"], input="Hello.",
+                                text=True, env=self.env, capture_output=True)
+        self.assertIn("model missing", result.stderr,
+                      "a provider's own error must still reach the panel")
 
 
 class OcrEngineTests(unittest.TestCase):

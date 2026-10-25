@@ -857,8 +857,13 @@ done
 if [[ $speech_request -eq 1 ]]; then
   if [[ "${TTS_PREPARATION_SESSION:-0}" != 1 ]]; then
     command -v setsid >/dev/null 2>&1 || die "setsid is required to own cancellable speech work"
-    exec setsid --wait env TTS_PREPARATION_SESSION=1 "$0" "$@"
+    # setsid --wait announces a child that ended by a signal ("did not exit
+    # normally") on its own stderr, and Stop ends speech exactly that way, so
+    # the panel showed it as an error. setsid is silenced; the child gets the
+    # real stderr back from fd 9.
+    exec setsid --wait env TTS_PREPARATION_SESSION=1 "$0" "$@" 9>&2 2>/dev/null
   fi
+  exec 2>&9 9>&-
   register_preparation || die "could not register speech preparation"
 fi
 
@@ -1243,8 +1248,9 @@ setsid --fork --wait env TTS_LAUNCH_STATE="$launch_state" bash -c '
   [[ "$identity" =~ ^[0-9]+$ && "$group" == "$$" ]] || exit 125
   printf "%s %s\n" "$$" "$identity" > "$TTS_LAUNCH_STATE" || exit 125
   unset TTS_LAUNCH_STATE
+  exec 2>&9 9>&-
   exec "$0"
-' "$PROV_BIN" <<< "$SPOKEN" &
+' "$PROV_BIN" <<< "$SPOKEN" 9>&2 2>/dev/null &
 child=$!
 speech_pgid="" speech_identity=""
 for _ in {1..200}; do

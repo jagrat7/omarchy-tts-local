@@ -1,6 +1,6 @@
 # Security policy
 
-Please [report vulnerabilities privately](https://github.com/jagrat7/omarchy-tts/security/advisories/new)
+Please [report vulnerabilities privately](https://github.com/jagrat7/omarchy-tts-local/security/advisories/new)
 through GitHub Security Advisories. Do not include selected text, clipboard
 contents, or screenshots in a report.
 
