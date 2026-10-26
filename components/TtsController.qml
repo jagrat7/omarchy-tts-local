@@ -31,10 +31,47 @@ Item {
   property string pendingPreview: ""
   property string pendingConfigValue: ""
   property var statusSource: null
-  property bool watchedSpeaking: false
-  readonly property bool speaking: statusSource
-                                   ? statusSource.speaking === true
-                                   : watchedSpeaking
+  property bool panelOpen: false
+  property string watchedStatus: "idle"
+  property string status: statusSource ? String(statusSource.status || (statusSource.speaking ? "speaking" : "idle")) : watchedStatus
+  readonly property bool paused: status === "paused"
+  readonly property bool speaking: status !== "idle"
+  property var nowPlaying: ({ status: "idle", text: "", chars: 0, elapsed: null, duration: null, rate: 1, provider: "", voice: "", canPause: false, canLiveRate: false })
+  property bool nowPlayingQueued: false
+  property var playbackQueue: []
+
+  function refreshNowPlaying() {
+    if (!panelOpen || !speaking) return
+    if (nowPlayingProc.running) { nowPlayingQueued = true; return }
+    nowPlayingQueued = false
+    nowPlayingProc.running = true
+  }
+  onPanelOpenChanged: refreshNowPlaying()
+  onStatusChanged: {
+    if (speaking) refreshNowPlaying()
+    else nowPlaying = { status: "idle", text: "", chars: 0, elapsed: null, duration: null, rate: 1, provider: "", voice: "", canPause: false, canLiveRate: false }
+  }
+  function runNextPlayback() {
+    if (playbackProc.running || playbackQueue.length === 0) return
+    var queue = playbackQueue.slice()
+    playbackProc.command = [speakBin].concat(queue.shift())
+    playbackQueue = queue
+    playbackProc.running = true
+  }
+  function playbackControl(args) {
+    var queue = playbackQueue.slice()
+    if (args[0] === "--live-rate") {
+      writeEpoch++
+      queue = queue.filter(function(item) { return item[0] !== "--live-rate" })
+    }
+    queue.push(args)
+    playbackQueue = queue
+    runNextPlayback()
+  }
+  function pause() { error = ""; playbackControl(["--pause"]) }
+  function resume() { error = ""; playbackControl(["--resume"]) }
+  function togglePause() { error = ""; playbackControl(["--toggle-pause"]) }
+  function setLiveRate(rate) { error = ""; playbackControl(["--live-rate", String(rate)]) }
   readonly property bool setupCancellable:
     (setupJob.status === "starting" || setupJob.status === "running")
     && setupJob.cancellable !== false
@@ -264,7 +301,30 @@ Item {
   }
   // The bar already owns a status stream. Reuse it when hosted there, while
   // retaining a fallback for standalone panel development.
-  Process { id: speechWatch; running: root.statusSource === null; command: [root.speakBin, "--watch-status"]; stdout: SplitParser { splitMarker: "\n"; onRead: function(data) { root.watchedSpeaking = data.trim() !== "idle" } } }
+  Process { id: speechWatch; running: root.statusSource === null; command: [root.speakBin, "--watch-status"]; stdout: SplitParser { splitMarker: "\n"; onRead: function(data) { root.watchedStatus = data.trim() } } }
+  Process {
+    id: nowPlayingProc; command: [root.speakBin, "--now-playing"]
+    stdout: StdioCollector { id: nowPlayingStdout; waitForEnd: true }
+    onExited: function(exitCode, exitStatus) {
+      if (exitStatus !== 0) return
+      if (exitCode === 0 && root.panelOpen && root.speaking) {
+        try { root.nowPlaying = JSON.parse(String(nowPlayingStdout.text || "")) } catch (e) {}
+      }
+      if (root.nowPlayingQueued) Qt.callLater(root.refreshNowPlaying)
+    }
+  }
+  Process {
+    id: playbackProc; command: []
+    stderr: StdioCollector { id: playbackStderr; waitForEnd: true }
+    onExited: function(exitCode, exitStatus) {
+      if (exitStatus !== 0) return
+      if (exitCode !== 0) root.error = String(playbackStderr.text || "Could not change playback.").trim()
+      root.refreshNowPlaying()
+      if (root.playbackQueue.length > 0) Qt.callLater(root.runNextPlayback)
+      else root.refresh()
+    }
+  }
+  Timer { interval: 450; repeat: true; running: root.panelOpen && root.speaking; onTriggered: root.refreshNowPlaying() }
   Process {
     id: verifyProc; command: []
     stdout: StdioCollector { id: verifyStdout; waitForEnd: true }

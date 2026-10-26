@@ -28,7 +28,9 @@ play_raw() {
   # Verification drives a provider end to end; it must not be audible.
   if [[ "${TTS_SILENT:-0}" == "1" ]]; then exec cat > /dev/null; fi
 
-  if command -v pw-cat >/dev/null 2>&1; then
+  if command -v mpv >/dev/null 2>&1 && [[ -n "${TTS_PLAYBACK_DIR:-}" ]]; then
+    exec python3 "$TTS_PLUGIN_DIR/lib/playback.py" player "$TTS_PLAYBACK_DIR" "$rate" "$ch"
+  elif command -v pw-cat >/dev/null 2>&1; then
     exec pw-cat --playback --format=s16 --rate="$rate" --channels="$ch" --raw -
   elif command -v aplay >/dev/null 2>&1; then
     exec aplay -q -f S16_LE -r "$rate" -c "$ch" -

@@ -9,6 +9,11 @@ Versioning.
   Screen reading groups and a single setup progress line, leaving five tabs
   (number keys 1–5). Config schema 6 maps a saved `.ui.lastTab` onto the new
   tabs; Screen reopens as Providers.
+- Playback controls: speech now plays through mpv over a private IPC socket,
+  adding `--pause`, `--resume`, `--toggle-pause`, `--live-rate N` (changes
+  the speed of what is already playing) and `--now-playing`. Keys gains an
+  unbound Pause / resume row. Without mpv, playback falls back to pw-cat and
+  the new controls report themselves unavailable.
 
 ## 2.0.0 - 2026-10-16
 
