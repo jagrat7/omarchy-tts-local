@@ -1,9 +1,9 @@
 <h1 align="center">Omarchy TTS Local</h1>
 
 <p align="center">
-  <a href="https://github.com/jagrat7/omarchy-tts-local/pulls?q=is%3Apr+is%3Amerged"><img src="https://img.shields.io/github/manifest-json/v/jagrat7/omarchy-tts-local?style=flat-square&label=version&labelColor=1a1212&color=c8432b" alt="Version"></a>
-  <a href="https://omarchy.org/"><img src="https://img.shields.io/badge/Omarchy-Quattro-c8432b?style=flat-square&labelColor=1a1212&logo=archlinux&logoColor=white" alt="Omarchy Quattro"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/jagrat7/omarchy-tts-local?style=flat-square&labelColor=1a1212&color=c8432b" alt="MIT license"></a>
+  <a href="https://github.com/jagrat7/omarchy-tts-local/pulls?q=is%3Apr+is%3Amerged"><img src="https://img.shields.io/github/manifest-json/v/jagrat7/omarchy-tts-local?style=flat-square&label=version&labelColor=1c1d25&color=34c8cb" alt="Version"></a>
+  <a href="https://omarchy.org/"><img src="https://img.shields.io/badge/Omarchy-Quattro-34c8cb?style=flat-square&labelColor=1c1d25&logo=archlinux&logoColor=white" alt="Omarchy Quattro"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/jagrat7/omarchy-tts-local?style=flat-square&labelColor=1c1d25&color=34c8cb" alt="MIT license"></a>
 </p>
 
 An Omarchy bar plugin that reads text aloud on a hotkey: the selection, the
@@ -39,6 +39,17 @@ Click the speaker icon in the bar. The first-run screen installs Kokoro, which
 runs on the CPU (about 480 MB). If Kokoro can't run on this computer, the
 screen says why and offers Piper instead. Shortcuts are set up from the Keys
 tab, and other providers from the Providers tab.
+
+## Uninstall
+
+Remove the shortcuts from the Keys tab, then:
+
+```bash
+omarchy plugin remove io.github.jagrat7.omarchy-tts-local
+```
+
+Downloaded data stays in `~/.local/share/omarchy-tts-local`,
+`~/.config/omarchy-tts-local` and `~/.cache/omarchy-tts-local`.
 
 ## Keys
 
@@ -167,17 +178,6 @@ Nothing you read or capture is sent anywhere; the network is only used for
 downloads you start. Engines install from hash-pinned locks in
 [`lib/engines/`](lib/engines), and models and voices are checked against
 SHA-256 digests. See [SECURITY.md](SECURITY.md).
-
-## Remove
-
-Remove the shortcuts from the Keys tab, then:
-
-```bash
-omarchy plugin remove io.github.jagrat7.omarchy-tts-local
-```
-
-Downloaded data stays in `~/.local/share/omarchy-tts-local`,
-`~/.config/omarchy-tts-local` and `~/.cache/omarchy-tts-local`.
 
 ## Development
 
