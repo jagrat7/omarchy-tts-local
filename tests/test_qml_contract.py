@@ -73,7 +73,13 @@ class QmlContractTests(unittest.TestCase):
 
     def test_provider_and_screen_engines_share_one_providers_tab(self):
         self.assertIn('readonly property var tabNames: ["Overview", "Providers", ', self.panel)
-        self.assertNotIn('"Screen"', self.panel)
+        tab_line = next(line for line in self.panel.splitlines() if "readonly property var tabNames" in line)
+        self.assertNotIn('"Screen"', tab_line)
+        # Screen reading on Providers is engines only; its preference lives on
+        # the Preferences tab, and the privacy note is gone from the header.
+        providers = self.panel[self.panel.index("// Providers: speech ----"):self.panel.index("// Text ----")]
+        self.assertNotIn("confidenceSlider", providers)
+        self.assertNotIn("Captures stay on this computer", self.panel)
         # Sections and shortcuts follow the list, so a later tab change cannot
         # leave a stale index or a dead number key behind.
         self.assertIsNone(re.search(r"currentTab === \d", self.panel))
@@ -228,8 +234,15 @@ class QmlContractTests(unittest.TestCase):
 
 
     def test_overview_is_the_first_tab_and_navigation_follows_the_tab_list(self):
-        self.assertIn('readonly property var tabNames: ["Overview", "Providers", "Text", "Languages", "Keys"]',
+        self.assertIn('readonly property var tabNames: ["Overview", "Providers", "Preferences", "Languages", "Keys"]',
                       self.panel)
+        prefs = self.panel[self.panel.index("// Text ----"):self.panel.index("// Languages ----")]
+        self.assertIn('PanelSectionHeader { text: "Text"', prefs)
+        self.assertIn('PanelSectionHeader { text: "Screen"', prefs)
+        self.assertIn("id: confidenceSlider", prefs)
+        self.assertIn("id: maxCharsField", prefs)
+        # A second click on the voice field closes its list instead of reopening it.
+        self.assertIn("popup.closePolicy = Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent", self.panel)
         self.assertIn("var tabCount = root.tabNames.length", self.panel)
         self.assertNotRegex(self.panel, r"%\s*6\b")
         self.assertNotIn("Qt.Key_6", self.panel)
