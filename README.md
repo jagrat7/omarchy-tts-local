@@ -16,26 +16,28 @@ you drag. Speech (Kokoro or Piper) and OCR (Tesseract or EasyOCR) run locally.
 
 ## Features
 
-- **Reads anything:** selection, clipboard, copied image, window, monitor or a dragged region.
-- **Local voices:** Kokoro on the CPU by default, Piper for slower PCs and other languages. No accounts.
 - **A player:** follows the text sentence by sentence, with pause and live speed.
-- **Screen reading:** Tesseract or EasyOCR, with recognition languages and a confidence floor.
-- **Clean text:** strips markdown and terminal codes, shortens URLs and paths.
-- **Set up in the panel:** install engines and rebind keys without a terminal.
-- **Scriptable:** `speak` plays, pauses and changes speed from the command line.
 
-<table>
-  <tr>
-    <td align="center"><img src="docs/screenshots/overview.png" width="260" alt="Overview reading a passage, sentence 3 of 4"><br><sub>Overview</sub></td>
-    <td align="center"><img src="docs/screenshots/providers.png" width="260" alt="Providers: Kokoro ready on the CPU, Tesseract ready"><br><sub>Providers</sub></td>
-    <td align="center"><img src="docs/screenshots/preferences.png" width="260" alt="Preferences: text rules, length limit and confidence floor"><br><sub>Preferences</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/screenshots/languages.png" width="260" alt="Languages for Tesseract"><br><sub>Languages</sub></td>
-    <td align="center"><img src="docs/screenshots/keys.png" width="260" alt="Keys: managed keybindings"><br><sub>Keys</sub></td>
-    <td></td>
-  </tr>
-</table>
+  <img src="docs/screenshots/overview.png" width="380" alt="Overview reading a passage, sentence 3 of 4">
+
+- **Local voices:** Kokoro on the CPU by default, Piper for slower PCs and other languages. No accounts.
+
+  <img src="docs/screenshots/providers.png" width="380" alt="Providers: Kokoro ready on the CPU, Tesseract ready">
+
+- **Clean text:** strips markdown and terminal codes, shortens URLs and paths, with a live preview.
+
+  <img src="docs/screenshots/preferences.png" width="380" alt="Preferences: text rules, length limit and confidence floor">
+
+- **Screen reading:** Tesseract or EasyOCR, with recognition languages and a confidence floor.
+
+  <img src="docs/screenshots/languages.png" width="380" alt="Languages for Tesseract">
+
+- **Your own keys:** rebind every shortcut in the panel; changes roll back if Hyprland rejects them.
+
+  <img src="docs/screenshots/keys.png" width="380" alt="Keys: managed keybindings">
+
+- **Reads anything:** selection, clipboard, copied image, window, monitor or a dragged region.
+- **Scriptable:** `speak` plays, pauses and changes speed from the command line.
 
 ## Install
 
