@@ -248,10 +248,17 @@ class QmlContractTests(unittest.TestCase):
         self.assertIn("readonly property bool voiceMissing: controller.infoLoaded && root.voiceOptions.length === 0",
                       self.panel)
         self.assertIn("if (!root.voiceMissing", self.panel)
-        # With no voice the summary row stays one line and points at Providers
-        # (or the catalogue when the engine downloads voices); it never expands.
-        self.assertIn('else if (root.voiceMissing) root.currentTab = root.tabNames.indexOf("Providers")', self.panel)
-        self.assertIn('onVoiceMissingChanged: if (root.voiceMissing) root.voiceOpen = false', self.panel)
+        # With no voice the row stays one line and points at Providers (or the
+        # catalogue when the engine downloads voices).
+        self.assertIn('else root.currentTab = root.tabNames.indexOf("Providers")', self.panel)
+        self.assertIn("visible: root.voiceMissing; color:", self.panel)
+        self.assertNotIn("voiceOpen", self.panel)
+        # The voice is picked inline; the length limit is a Text rule.
+        overview = self.panel[self.panel.index("// Overview ----"):self.panel.index("// Providers: speech ----")]
+        text_tab = self.panel[self.panel.index("// Text ----"):self.panel.index("// Languages ----")]
+        self.assertIn("id: voiceDropdown", overview)
+        self.assertNotIn("maxCharsField", overview)
+        self.assertIn("id: maxCharsField", text_tab)
         self.assertIn('"Open Providers', self.panel)
 
     def test_speed_goes_live_while_speaking_and_keeps_the_override(self):
