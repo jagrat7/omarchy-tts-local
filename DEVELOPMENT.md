@@ -73,8 +73,8 @@ invocation repairs artifacts left by abrupt process death or power loss.
 - Provider installs use reviewed Omarchy/uv commands and require confirmation.
 - Direct engine packages are release-pinned; Kokoro deliberately uses an
   isolated Python 3.12 because its published metadata excludes newer Python.
-- The cloud providers and OCR engines were removed in 2.0.0, so the plugin
-  keeps no credentials at all. `speak-setup cleanup` still clears keys that
+- The cloud providers and OCR engines were removed when this fork went
+  local-only, so the plugin keeps no credentials at all. `speak-setup cleanup` still clears keys that
   earlier versions stored in the keyring.
 - Raw PCM uses mpv JSON IPC when available, with pw-cat/aplay fallback. Live
   rate is a pitch-preserving player speed ratio over the synthesis rate; the

@@ -3,7 +3,13 @@
 All notable changes are documented here. This project follows Semantic
 Versioning.
 
-## Unreleased
+## 1.0.0 - 2026-10-26
+
+First release of Local Text to Speech as a plugin of its own, so it starts
+again at 1.0.0. It covers everything since the fork from
+[hikari112/omarchy-tts](https://github.com/hikari112/omarchy-tts) 1.3.2; the
+fork's earlier `v2.0.0` tag and 1.4.0 notes, kept below, were steps towards
+this release.
 
 - Kokoro ONNX on the CPU is the default provider and what first-run setup
   installs; Piper is the lighter fallback. Setup checks the processor before
@@ -37,7 +43,7 @@ Versioning.
   unbound Pause / resume row. Without mpv, playback falls back to pw-cat and
   the new controls report themselves unavailable.
 
-## 2.0.0 - 2026-10-16
+### Local-only and renamed (tagged v2.0.0 before renumbering)
 
 - **Breaking:** renamed to Omarchy TTS Local (`io.github.jagrat7.omarchy-tts-local`).
   Config, data, cache and runtime paths move from `omarchy-tts` to
@@ -64,7 +70,7 @@ Versioning.
   use. Providers group by new `# family:`, `# variant:` and `# variantnote:`
   headers, reported by `speak --info`.
 
-## 1.4.0 - 2026-09-30
+### Kokoro ONNX (noted as 1.4.0 before renumbering)
 
 - Add the `kokoro_onnx` provider: Kokoro v1.0 on ONNX Runtime with all 27
   English voices, streaming sentence by sentence. It starts in under a second
@@ -97,7 +103,12 @@ Versioning.
   Hyprland, where `hyprctl binds` shows `__lua` and an opaque callback id
   instead of the command; the managed block is now recognised by its label.
 
-## 1.3.2 - 2026-09-06
+## Upstream history
+
+Releases of [hikari112/omarchy-tts](https://github.com/hikari112/omarchy-tts)
+before the fork.
+
+### 1.3.2 - 2026-09-06
 
 - Resolve `pkexec` and `pacman` at fixed canonical paths and admit them across
   the privilege boundary only when the executable and every ancestor directory
@@ -126,7 +137,7 @@ Versioning.
   not installed, because it was not built from this release's lock; reinstall
   Piper, Kokoro or EasyOCR once from the panel. Piper voices are unaffected.
 
-## 1.3.1 - 2026-09-04
+### 1.3.1 - 2026-09-04
 
 - Pin Piper voice downloads to one immutable revision of `rhasspy/piper-voices`
   and verify every model and sidecar against SHA-256 digests shipped in the
@@ -135,7 +146,7 @@ Versioning.
   upstream branch can no longer alter what is downloaded or trusted.
   `tools/pin-piper-voices` regenerates the pinned data for a new revision.
 
-## 1.3.0 - 2026-09-03
+### 1.3.0 - 2026-09-03
 
 - Add selectable EasyOCR, OpenAI Vision, and Google Cloud Vision recognition
   engines, with per-engine language state, explicit language discovery, and
@@ -187,14 +198,14 @@ Versioning.
   keyboard and assistive labels, render user/service strings as plain text, and
   keep all panel process input JSON-safe.
 
-## 1.2.3 - 2026-09-02
+### 1.2.3 - 2026-09-02
 
 - Add a root `preview.png` for marketplace listing cards.
 - Fall back to an owner-only `$XDG_STATE_HOME` directory instead of shared
   `/tmp` when no session runtime directory exists, so runtime PID state is
   never placed where another user could pre-populate it.
 
-## 1.2.2 - 2026-09-02
+### 1.2.2 - 2026-09-02
 
 - Make provider verification silent for every bundled backend and document the
   complete provider environment contract.
@@ -215,7 +226,7 @@ Versioning.
 - Refresh the README, contributor workflow, security guidance, screenshots,
   and marketplace-facing release documentation.
 
-## 1.2.1 - 2026-09-02
+### 1.2.1 - 2026-09-02
 
 - Add local OCR for image-only clipboard content while preferring text when
   both clipboard representations are available.
@@ -233,7 +244,7 @@ Versioning.
   private, atomic account-voice caching.
 - Isolate CLI tests from the user's real cache, keyring, and session bus.
 
-## 1.2.0 - 2026-09-02
+### 1.2.0 - 2026-09-02
 
 - Add privacy-safe paid-provider telemetry, live ElevenLabs subscription usage,
   OpenAI rate-limit windows, actionable quota/rate errors, and panel refresh.
@@ -265,7 +276,7 @@ Versioning.
   without temporary plaintext files, and reject plaintext configuration keys
   so key storage matches the documented keyring-only policy.
 
-## 1.1.0 - 2026-09-02
+### 1.1.0 - 2026-09-02
 
 - Add a complete five-tab settings panel and live speech controls.
 - Add graphical first-run setup, provider installation, and keyring entry.
@@ -274,6 +285,6 @@ Versioning.
 - Add local OCR modes and configurable text sanitization.
 - Keep plugin engines and voices in an isolated data directory.
 
-## 1.0.0
+### 1.0.0
 
 - Initial release.

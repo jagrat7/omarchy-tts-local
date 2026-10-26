@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.jagrat7.omarchy-tts-local",
   "name": "Local Text to Speech",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "author": "jagrat7",
   "license": "MIT",
   "description": "On-demand, local-only speech for selected text and anything visible on screen",
