@@ -1,0 +1,18 @@
+{
+  "type": "desktop",
+  "title": "Omarchy TTS Local",
+  "description": "Omarchy bar plugin that reads anything aloud on a hotkey: the selection, clipboard, a window, or a dragged region. Speech and OCR run locally.",
+  "tags": [
+    "Python",
+    "QML",
+    "Omarchy"
+  ],
+  "image": "preview.png",
+  "images": [
+    "preview.png",
+    "docs/screenshots/overview.png",
+    "docs/screenshots/providers.png",
+    "docs/screenshots/preferences.png",
+    "docs/screenshots/keys.png"
+  ]
+}
