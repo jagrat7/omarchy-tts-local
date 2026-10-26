@@ -1,7 +1,7 @@
 <h1 align="center">Omarchy TTS Local</h1>
 
 <p align="center">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/github/v/tag/jagrat7/omarchy-tts-local?style=flat-square&label=version&labelColor=1a1212&color=c8432b" alt="Version"></a>
+  <a href="https://github.com/jagrat7/omarchy-tts-local/pulls?q=is%3Apr+is%3Amerged"><img src="https://img.shields.io/github/manifest-json/v/jagrat7/omarchy-tts-local?style=flat-square&label=version&labelColor=1a1212&color=c8432b" alt="Version"></a>
   <a href="https://omarchy.org/"><img src="https://img.shields.io/badge/Omarchy-Quattro-c8432b?style=flat-square&labelColor=1a1212&logo=archlinux&logoColor=white" alt="Omarchy Quattro"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/jagrat7/omarchy-tts-local?style=flat-square&labelColor=1a1212&color=c8432b" alt="MIT license"></a>
 </p>
@@ -209,4 +209,4 @@ Architecture notes are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 Fork of [hikari112/omarchy-tts](https://github.com/hikari112/omarchy-tts) by
 Jesse Sanford, which this project builds on. Changes since the fork are in
-[CHANGELOG.md](CHANGELOG.md).
+the [merged pull requests](https://github.com/jagrat7/omarchy-tts-local/pulls?q=is%3Apr+is%3Amerged).
