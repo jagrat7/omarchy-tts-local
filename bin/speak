@@ -24,6 +24,7 @@ STATUS_FILE="$STATE_DIR/status"
 ACTIVE_PROVIDER_FILE="$STATE_DIR/provider"
 SPEECH_LOCK="$STATE_DIR/speech.lock"
 SANITIZER="$PLUGIN_DIR/lib/sanitize.py"
+PLAYBACK="$PLUGIN_DIR/lib/playback.py"
 INPUT_MAX_BYTES=1048576
 CAPTURE_MAX_BYTES=52428800
 
@@ -603,6 +604,9 @@ stop_speaking_unlocked() {
   stop_owned_group "$PID_FILE"
   stop_owned_group "$PREP_FILE"
   rm -f "$ACTIVE_PROVIDER_FILE"
+  if [[ -e "$STATE_DIR/now-playing.json" || -L "$STATE_DIR/now-playing.json" ]]; then
+    python3 "$PLAYBACK" clear "$STATE_DIR"
+  fi
   set_status idle
 }
 
@@ -633,6 +637,7 @@ is_speaking() {
 
 PREP_OWNER=""
 PLAYBACK_OWNER=""
+TTS_PLAYBACK_DIR=""
 declare -a JOB_TEMP_FILES=()
 # Invoked through the EXIT trap installed by register_preparation.
 # ShellCheck 0.10 uses SC2317 for trap-only functions; 0.11 uses SC2329.
@@ -660,6 +665,9 @@ cleanup_job() {
   # never leave screenshot or OCR text files behind.
   [[ ${#JOB_TEMP_FILES[@]} -eq 0 ]] || rm -f -- "${JOB_TEMP_FILES[@]}"
   JOB_TEMP_FILES=()
+  if [[ -n "$TTS_PLAYBACK_DIR" ]]; then
+    python3 "$PLAYBACK" cleanup-dir "$TTS_PLAYBACK_DIR" 2>/dev/null || true
+  fi
   cleanup_preparation
   if [[ -n "$PLAYBACK_OWNER" ]]; then
     local lock_fd current=""
@@ -669,6 +677,7 @@ cleanup_job() {
       if [[ "$current" == "$PLAYBACK_OWNER" ]]; then
         stop_owned_group "$PID_FILE"
         rm -f "$ACTIVE_PROVIDER_FILE"
+        python3 "$PLAYBACK" clear "$STATE_DIR"
         set_status idle
       fi
       flock -u "$lock_fd"
@@ -734,6 +743,44 @@ register_preparation() {
   trap 'exit 143' TERM HUP
 }
 
+playback_control() { # serialized against Stop and utterance handoff
+  local lock_fd
+  exec {lock_fd}>>"$SPEECH_LOCK" || return 1
+  flock "$lock_fd"
+  python3 "$PLAYBACK" "$1" "$STATE_DIR" "${@:2}"
+  local rc=$?
+  flock -u "$lock_fd"
+  exec {lock_fd}>&-
+  return "$rc"
+}
+
+live_rate() {
+  local value="$1" provider bin minimum maximum lock_fd
+  # Use the same validation as --set before applying provider limits.
+  if [[ ! "$value" =~ ^(0?[.][0-9]+|[1-3]([.][0-9]+)?|4([.]0+)?)$ ]] ||
+      ! awk -v v="$value" 'BEGIN { exit !(v >= 0.25 && v <= 4) }'; then
+    die "invalid rate"
+  fi
+  exec {lock_fd}>>"$SPEECH_LOCK" || return 1
+  flock "$lock_fd"
+  provider="$(cfg .provider piper)"
+  if owner_is_live "$PID_FILE"; then
+    provider="$(small_runtime_value "$ACTIVE_PROVIDER_FILE" 128 || printf '%s' "$provider")"
+  fi
+  bin="$(provider_path "$provider")" || die "no such provider: $provider"
+  minimum="$(meta_of "$bin" ratemin)" maximum="$(meta_of "$bin" ratemax)"
+  if [[ "$minimum" =~ ^[0-9]+([.][0-9]+)?$ && "$maximum" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    awk -v v="$value" -v lo="$minimum" -v hi="$maximum" \
+      'BEGIN { exit !(v >= lo && v <= hi) }' || die "$provider supports rates from $minimum to $maximum"
+  fi
+  set_config .rate "$value" || die "could not write .rate"
+  python3 "$PLAYBACK" live-rate "$STATE_DIR" "$value"
+  local rc=$?
+  flock -u "$lock_fd"
+  exec {lock_fd}>&-
+  return "$rc"
+}
+
 usage() {
   cat <<'USAGE'
 Usage: speak [options] [text...]
@@ -752,6 +799,11 @@ Read the screen (OCR)
 Control
   -S, --stop           stop speech in progress
   -T, --toggle         stop if speaking, otherwise speak the selection
+      --pause          pause current mpv playback (no-op when unavailable)
+      --resume         resume current playback
+      --toggle-pause   toggle current playback pause
+      --live-rate N   persist speed and apply to current mpv playback
+      --now-playing   print private, bounded playback state as JSON
       --status         print current status and exit
       --watch-status   stream status changes (used by the bar widget)
       --watch-state    stream status and provider as JSON (used by the bar widget)
@@ -812,6 +864,8 @@ chmod 700 "$STATE_DIR" || exit 1
 # new preparation owner could mistake itself for the work it should stop.
 if [[ $# -eq 1 ]]; then
   case "$1" in
+    --pause|--resume|--toggle-pause) playback_control "${1#--}"; exit $? ;;
+    --now-playing) playback_control state "$(cfg .rate 1.0)" "$(cfg .provider piper)"; exit $? ;;
     -S|--stop) stop_speaking; exit 0 ;;
     --status)
       if is_speaking; then
@@ -848,7 +902,7 @@ for ((scan_i=0; scan_i<${#scan_args[@]}; scan_i++)); do
     -s|--selection|-c|--clipboard|--snip|--window|--screen|--raw|--stdin-json|-T|--toggle) ;;
     -S|--stop|--status|--watch-status|--watch-state|-l|--list|-h|--help|\
     --verify|--verify-ocr|--refresh-languages|--cycle-provider|\
-    --current-provider|--watch-provider|--info|--set|--set-stdin-json|\
+    --current-provider|--watch-provider|--info|--set|--set-stdin-json|--live-rate|\
     --preview|--preview-text|--preview-stdin-json)
       speech_request=0; break ;;
     -*) speech_request=0; break ;;
@@ -945,6 +999,7 @@ while [[ $# -gt 0 ]]; do
         notify-send -a "Speak" "Voice provider" "$new" 2>/dev/null
       printf '%s\n' "$new"; exit 0 ;;
     --info) emit_info; exit 0 ;;
+    --live-rate) [[ $# -eq 2 ]] || die "--live-rate needs a value"; live_rate "$2"; exit $? ;;
     --set)
       [[ -n "${2:-}" && -n "${3:-}" ]] || die "--set needs a path and a value"
       set_config "$2" "$3" || die "could not write $2"
@@ -1229,6 +1284,8 @@ fi
 # to leave, making Stop miss the actual audio process. The private handshake
 # removes that race, while the waiting setsid parent preserves the provider's
 # eventual exit status.
+TTS_PLAYBACK_DIR="$(mktemp -d "$STATE_DIR/.player.XXXXXXXX")" || die "could not prepare player state"
+export TTS_PLAYBACK_DIR
 launch_state="$(mktemp "$STATE_DIR/.speech-launch.XXXXXX")" || {
   rm -f "$ACTIVE_PROVIDER_FILE"; set_status idle
   flock -u "$speech_lock_fd"; exec {speech_lock_fd}>&-
@@ -1289,6 +1346,14 @@ if ! atomic_state_write "$PID_FILE" "$speech_owner"; then
   die "could not register speech process"
 fi
 PLAYBACK_OWNER="$speech_owner"
+python3 "$PLAYBACK" init "$STATE_DIR" "$speech_owner" "${TTS_PLAYBACK_DIR##*/}" \
+  "$TTS_RATE" "$PROVIDER" "$TTS_VOICE" <<< "$SPOKEN" || {
+    stop_speaking_unlocked
+    PLAYBACK_OWNER=""
+    flock -u "$speech_lock_fd"; exec {speech_lock_fd}>&-
+    wait "$child" 2>/dev/null || true
+    die "could not register now-playing state"
+  }
 flock -u "$speech_lock_fd"
 exec {speech_lock_fd}>&-
 
@@ -1309,6 +1374,7 @@ if [[ -n "$speech_owner" && "$current_owner" != "$speech_owner" ]]; then
   speech_cancelled=1
 else
   rm -f "$PID_FILE" "$ACTIVE_PROVIDER_FILE"
+  python3 "$PLAYBACK" clear "$STATE_DIR"
   set_status idle
 fi
 PLAYBACK_OWNER=""

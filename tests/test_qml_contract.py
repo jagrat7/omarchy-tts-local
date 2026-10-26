@@ -108,6 +108,25 @@ class QmlContractTests(unittest.TestCase):
             body = self.controller[start:following if following >= 0 else None]
             self.assertIn('error = ""', body, signature)
 
+    def test_playback_reads_are_queued_and_only_poll_an_open_active_panel(self):
+        self.assertIn('property string status:', self.controller)
+        self.assertIn('readonly property bool paused: status === "paused"', self.controller)
+        self.assertIn('readonly property bool speaking: status !== "idle"', self.controller)
+        self.assertIn('property var nowPlaying:', self.controller)
+        self.assertIn('running: root.panelOpen && root.speaking', self.controller)
+        self.assertIn('interval: 450', self.controller)
+        self.assertIn('panelOpen: root.opened', self.panel)
+        start = self.controller.index('function refreshNowPlaying()')
+        body = self.controller[start:self.controller.index('onPanelOpenChanged:', start)]
+        self.assertIn('if (!panelOpen || !speaking) return', body)
+        self.assertIn('nowPlayingQueued = true', body)
+        self.assertNotIn('restart(', body)
+        for name in ('pause()', 'resume()', 'togglePause()', 'setLiveRate(rate)'):
+            line = next(line for line in self.controller.splitlines() if 'function ' + name in line)
+            self.assertIn('error = ""', line)
+            self.assertIn('playbackControl(', line)
+        self.assertIn('"pause", "snip"', self.panel)
+
     def test_duplicate_job_starts_reconnect_to_the_backend_owner(self):
         self.assertIn('result.code === "already_running"', self.controller)
         self.assertIn('stderr.indexOf("already running") >= 0', self.controller)

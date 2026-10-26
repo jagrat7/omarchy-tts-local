@@ -6,7 +6,8 @@ BarWidget {
   id: root
   moduleName: "io.github.jagrat7.omarchy-tts-local"
 
-  property bool speaking: false
+  property string status: "idle"
+  readonly property bool speaking: status !== "idle"
   property string provider: "piper"
 
   function localPath(url) {
@@ -65,7 +66,7 @@ BarWidget {
       onRead: function (line) {
         try {
           var state = JSON.parse(line)
-          root.speaking = state.status !== "idle"
+          root.status = state.status
           if (state.provider) root.provider = state.provider
         } catch (e) {}
       }
@@ -89,7 +90,7 @@ BarWidget {
 
     text: "󰕾"
     active: root.speaking
-    tooltipText: root.speaking
+    tooltipText: root.status === "paused" ? "Paused — right-click to stop" : root.speaking
       ? "Speaking — right-click to stop"
       : "Text to speech (" + root.provider + ") — click for settings, right-click to speak selection"
 
@@ -111,7 +112,7 @@ BarWidget {
   }
 
   SequentialAnimation {
-    running: root.speaking
+    running: root.speaking && root.status !== "paused"
     loops: Animation.Infinite
     alwaysRunToEnd: true
     NumberAnimation { target: pulse; property: "value"; from: 1.0; to: 0.45; duration: 700; easing.type: Easing.InOutQuad }

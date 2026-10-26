@@ -22,6 +22,9 @@ be owned by the current user and cannot be symlinks. Config symlink targets are
 preserved deliberately, dangling targets are rejected, and interrupted engine
 or voice replacement is recovered transactionally on the next operation.
 
+The active utterance keeps at most 4096 sanitized characters in a mode 0600
+file in the private runtime directory. Stop and normal completion remove it.
+
 ## Supply chain
 
 Everything the plugin installs after the initial `omarchy plugin add` is fixed

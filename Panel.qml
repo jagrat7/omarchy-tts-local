@@ -372,7 +372,7 @@ Panel {
     return grouped
   }
 
-  TtsController { id: controller; statusSource: root.hostWidget }
+  TtsController { id: controller; statusSource: root.hostWidget; panelOpen: root.opened }
   // Restoring the tab used to run on a callLater, which fires long before the
   // 200 ms settings read returns - so it restored from whatever was loaded
   // last time and the panel opened on the wrong tab. Wait for real data.
@@ -1180,7 +1180,7 @@ Panel {
             }
           }
           Repeater {
-            model: ["selection", "clipboard", "stop", "snip", "window", "screen"]
+            model: ["selection", "clipboard", "stop", "pause", "snip", "window", "screen"]
             delegate: KeyRow {
               required property string modelData
               readonly property var binding: controller.bindings.bindings?.[modelData] || ({})

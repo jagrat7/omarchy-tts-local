@@ -75,8 +75,14 @@ invocation repairs artifacts left by abrupt process death or power loss.
 - The cloud providers and OCR engines were removed in 2.0.0, so the plugin
   keeps no credentials at all. `speak-setup cleanup` still clears keys that
   earlier versions stored in the keyring.
-- Live speed changes apply to the next utterance because current providers do
-  not expose safe in-place playback speed updates.
+- Raw PCM uses mpv JSON IPC when available, with pw-cat/aplay fallback. Live
+  rate is a pitch-preserving player speed ratio over the synthesis rate; the
+  saved rate still drives the next synthesis natively.
+- Now-playing elapsed and duration use the normal-rate content timeline:
+  mpv audio PTS times the synthesis rate, excluding pauses. Duration uses an
+  estimate of 15 characters/second (never less than elapsed); a pipe's
+  reported duration covers only the bytes buffered so far.
+  Fallback players expose no pause/live-rate capability and null progress.
 
 ## Suggested reviewer path
 

@@ -111,6 +111,21 @@ Text goes through [`lib/sanitize.py`](lib/sanitize.py) first, which strips
 markdown, ANSI codes and box drawing and shortens URLs, paths and hashes. The
 Text tab previews it.
 
+Playback controls are also available from the CLI:
+
+```bash
+speak --pause             # mpv playback only; harmless when idle
+speak --resume
+speak --toggle-pause
+speak --live-rate 1.25    # saves the next rate; reports applied: live or next
+speak --now-playing       # bounded text, status, progress, capabilities as JSON
+```
+
+Raw audio uses mpv when installed, with pw-cat/aplay fallback. Pause and live
+speed are unavailable with fallback players. Progress uses a normal-rate
+content timeline; duration is estimated at 15 characters/second when unknown.
+The Keys tab offers an unbound “Pause / resume” shortcut.
+
 ## Custom providers
 
 Any executable that reads text on stdin and plays it. Put it in

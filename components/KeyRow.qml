@@ -31,7 +31,7 @@ Rectangle {
     width: keyText.implicitWidth + 12; height: 24; radius: 4
     color: Commons.Color.background; border.width: 1; border.color: Commons.Color.popups.border
     Text {
-      id: keyText; anchors.centerIn: parent; text: root.chord.replace(/ \+ /g, "  ")
+      id: keyText; anchors.centerIn: parent; text: root.chord ? root.chord.replace(/ \+ /g, "  ") : "Unbound"
       textFormat: Text.PlainText
       color: root.foreground; font.family: Style.font.family; font.pixelSize: Style.font.caption
     }

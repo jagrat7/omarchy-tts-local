@@ -94,6 +94,7 @@ DEFAULTS = {
     "selection": {"chord": "SUPER + ALT + E", "label": "Speak selection", "command": f"{SPEAK_COMMAND} --toggle"},
     "clipboard": {"chord": "SUPER + ALT + A", "label": "Speak clipboard", "command": f"{SPEAK_COMMAND} --clipboard"},
     "stop": {"chord": "SUPER + ALT + X", "label": "Stop speaking", "command": f"{SPEAK_COMMAND} --stop"},
+    "pause": {"chord": "", "label": "Pause / resume", "command": f"{SPEAK_COMMAND} --toggle-pause"},
     "snip": {"chord": "SUPER + ALT + R", "label": "Speak screen region", "command": f"{SPEAK_COMMAND} --snip"},
     "window": {"chord": "SUPER + ALT + W", "label": "Speak focused window", "command": f"{SPEAK_COMMAND} --window"},
     "screen": {"chord": "SUPER + ALT + SHIFT + R", "label": "Speak whole screen", "command": f"{SPEAK_COMMAND} --screen"},
@@ -164,6 +165,8 @@ def lua_string(value: str) -> str:
 def render(config: dict) -> str:
     lines = [BEGIN, "-- Managed by speak-bindings. Edit through the TTS panel or CLI."]
     for item in config.values():
+        if not item["chord"]:
+            continue
         lines.append(
             f"o.bind({lua_string(item['chord'])}, {lua_string(item['label'])}, "
             f"{lua_string(item['command'])})"
@@ -174,6 +177,8 @@ def render(config: dict) -> str:
 
 def normalize_chord(chord: str) -> str:
     """Return the canonical Hyprland chord accepted by the QML capture UI."""
+    if not chord.strip():
+        return ""
     parts = [part.strip().upper() for part in chord.split("+")]
     normalized = " + ".join(parts)
     if not re.fullmatch(r"[A-Z0-9_]+(?: \+ [A-Z0-9_]+)*", normalized):
@@ -215,7 +220,7 @@ def replace_block(text: str, block: str | None) -> str:
 # "speak" with one of these is ours however it was written - by hand, by an
 # older README, through ~/.local/bin, or straight out of the plugin directory.
 OUR_FLAGS = {"--toggle", "--clipboard", "--stop", "--snip", "--window",
-             "--screen", "--selection"}
+             "--screen", "--selection", "--toggle-pause"}
 FULL_BIND_LINE = re.compile(
     r'^\s*o\.bind\(\s*"([^"]*)"\s*,\s*"[^"]*"\s*,\s*"([^"]*)"\s*\)\s*$'
 )
@@ -317,7 +322,7 @@ def conflicting_chords(text: str, config: dict) -> list[str]:
         except ValueError:
             continue
     return [item["chord"] for item in config.values()
-            if chord_signature(item["chord"]) in occupied]
+            if item["chord"] and chord_signature(item["chord"]) in occupied]
 
 
 MOD_MASKS = {"SHIFT": 1, "CTRL": 4, "ALT": 8, "SUPER": 64}
@@ -349,7 +354,7 @@ def active_conflicting_chords(config: dict) -> list[str]:
     # A Lua-configured Hyprland reports o.bind() shortcuts with dispatcher
     # "__lua" and an opaque callback id as the argument, so the command is not
     # visible. Our own block is then recognised by its label on its own chord.
-    managed_labels = {chord_signature(item["chord"]): item["label"] for item in config.values()}
+    managed_labels = {chord_signature(item["chord"]): item["label"] for item in config.values() if item["chord"]}
     for binding in active:
         if not isinstance(binding, dict):
             continue
@@ -370,14 +375,16 @@ def active_conflicting_chords(config: dict) -> list[str]:
             continue
         occupied.add(signature)
     return [item["chord"] for item in config.values()
-            if chord_signature(item["chord"]) in occupied]
+            if item["chord"] and chord_signature(item["chord"]) in occupied]
 
 
 def duplicate_chords(config: dict) -> list[str]:
-    """Find collisions among the six shortcuts being managed together."""
+    """Find collisions among the shortcuts being managed together."""
     seen: set[tuple[int, str]] = set()
     duplicates: list[str] = []
     for item in config.values():
+        if not item["chord"]:
+            continue
         signature = chord_signature(item["chord"])
         if signature in seen and item["chord"] not in duplicates:
             duplicates.append(item["chord"])

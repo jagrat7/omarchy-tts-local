@@ -2453,6 +2453,322 @@ class ProviderHealthTests(unittest.TestCase):
             sleeper.wait(timeout=3)
 
 
+
+class PlaybackControlTests(unittest.TestCase):
+    """Exercise the real CLI with a silent, identity-preserving IPC player."""
+    def setUp(self):
+        CliConfigTests.setUp(self)
+        self.tools = Path(self.temp.name, "tools")
+        self.tools.mkdir()
+        player = self.tools / "mpv"
+        player.write_text("#!/usr/bin/env python3\n" + r"""
+import json, os, socket, sys, time
+from pathlib import Path
+Path(os.environ['PLAYER_ARGS']).write_text(json.dumps(sys.argv[1:]))
+path = next(arg.split('=', 1)[1] for arg in sys.argv if arg.startswith('--input-ipc-server='))
+server = socket.socket(socket.AF_UNIX)
+server.bind(path)
+server.listen()
+server.settimeout(.1)
+paused = False
+speed = 1.0
+position = 0.0
+previous = time.monotonic()
+deadline = previous + float(os.environ.get('PLAYER_LIFETIME', '30'))
+while time.monotonic() < deadline:
+    try:
+        client, _ = server.accept()
+    except socket.timeout:
+        continue
+    with client, client.makefile('rb') as stream:
+        for line in stream:
+            now = time.monotonic()
+            if not paused:
+                position += (now - previous) * speed
+            previous = now
+            request = json.loads(line)
+            cmd, prop, *values = request['command']
+            data = None
+            if cmd == 'set_property':
+                if prop == 'pause': paused = values[0]
+                if prop == 'speed': speed = values[0]
+            else:
+                data = {'pause': paused, 'speed': speed, 'audio-pts': position}.get(prop)
+            client.sendall((json.dumps({'event': 'property-change'}) + '\n').encode())
+            reply = {'request_id': request['request_id'], 'error': 'success'}
+            if cmd == 'get_property': reply['data'] = data
+            client.sendall((json.dumps(reply) + '\n').encode())
+""")
+        player.chmod(0o755)
+        self.env.update(PATH=str(self.tools) + os.pathsep + self.env['PATH'],
+                        PLAYER_ARGS=str(Path(self.temp.name, 'player-args')))
+        self.env.pop('TTS_SILENT', None)
+        self.run_speak('--set', '.provider', 'fixture')
+        providers = Path(self.temp.name, 'omarchy-tts-local', 'providers')
+        providers.mkdir(exist_ok=True)
+        fixture = providers / 'fixture'
+        fixture.write_text('#!/usr/bin/env bash\n# ratemin: 0.5\n# ratemax: 2.0\n'
+                           'cat >/dev/null\nsource "$TTS_PLUGIN_DIR/lib/play.sh"\n'
+                           "printf '\\0\\0' | play_raw 24000 1\n")
+        fixture.chmod(0o755)
+        self.state = Path(self.temp.name, 'omarchy-tts-local')
+        self.jobs = []
+
+    def tearDown(self):
+        self.run_speak('--stop', check=False)
+        for job in self.jobs:
+            job.communicate(timeout=5)
+        CliConfigTests.tearDown(self)
+
+    run_speak = CliConfigTests.run_speak
+
+    def now(self):
+        return json.loads(self.run_speak('--now-playing').stdout)
+
+    def launch(self, text='Hello **friend**.', env=None, ready=True, raw=False):
+        owner_file = self.state / 'pgid'
+        previous = owner_file.read_text() if owner_file.exists() else ''
+        job = subprocess.Popen([SPEAK, '--stdin-json', *(['--raw'] if raw else [])], env=env or self.env,
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True)
+        job.stdin.write(json.dumps(text) + '\n')
+        job.stdin.close()
+        job.stdin = None
+        self.jobs.append(job)
+        if ready:
+            for _ in range(100):
+                if (self.now()['canPause'] and owner_file.exists()
+                        and owner_file.read_text() != previous):
+                    return job
+                if job.poll() is not None:
+                    self.fail(job.communicate()[1])
+                time.sleep(.01)
+            self.fail('player did not register')
+        return job
+
+    def test_playback_idle_controls_are_idempotent_and_rate_persists(self):
+        for flag in ('--pause', '--resume', '--toggle-pause'):
+            self.assertEqual(self.run_speak(flag).stdout, '')
+        state = self.now()
+        self.assertEqual(state['status'], 'idle')
+        self.assertFalse(state['canPause'])
+        self.assertIsNone(state['elapsed'])
+        result = json.loads(self.run_speak('--live-rate', '1.25').stdout)
+        self.assertEqual(result, {'rate': 1.25, 'applied': 'next'})
+        self.assertEqual(self.now()['rate'], 1.25)
+        for rate in ('NaN', '0', '0.4', '2.1', '5', '1e0'):
+            self.assertNotEqual(self.run_speak('--live-rate', rate, check=False).returncode, 0)
+        self.assertNotEqual(self.run_speak('--live-rate', check=False).returncode, 0)
+        self.assertEqual(json.loads(self.run_speak('--info').stdout)['rate'], 1.25)
+
+    def test_pause_resume_toggle_progress_and_stop_cleanup(self):
+        job = self.launch()
+        state = self.now()
+        self.assertEqual(state['text'], 'Hello friend.')
+        self.assertEqual(state['chars'], len('Hello friend.'))
+        self.assertEqual(state['provider'], 'fixture')
+        self.assertTrue(state['canLiveRate'])
+        metadata = self.state / 'now-playing.json'
+        self.assertEqual(metadata.stat().st_mode & 0o777, 0o600)
+        directory = self.state / json.loads(metadata.read_text())['session']
+        self.assertEqual(directory.stat().st_mode & 0o777, 0o700)
+        for _ in range(2):
+            self.run_speak('--pause')
+        first = self.now()
+        time.sleep(.12)
+        second = self.now()
+        self.assertEqual(first['status'], 'paused')
+        self.assertAlmostEqual(first['elapsed'], second['elapsed'], places=3)
+        self.assertEqual(self.run_speak('--status').stdout.strip(), 'paused')
+        watcher = subprocess.Popen([SPEAK, '--watch-state'], env=self.env,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            self.assertTrue(select.select([watcher.stdout], [], [], 3)[0])
+            self.assertEqual(json.loads(watcher.stdout.readline())['status'], 'paused')
+        finally:
+            watcher.terminate()
+            watcher.communicate(timeout=3)
+        for _ in range(2):
+            self.run_speak('--resume')
+        time.sleep(.08)
+        self.assertGreater(self.now()['elapsed'], second['elapsed'])
+        self.run_speak('--toggle-pause')
+        self.assertEqual(self.now()['status'], 'paused')
+        self.run_speak('--toggle-pause')
+        self.assertEqual(self.now()['status'], 'speaking')
+        self.run_speak('--pause')
+        owner = int((self.state / 'pgid').read_text().split()[0])
+        self.run_speak('--stop')
+        job.communicate(timeout=3)
+        self.assertFalse(metadata.exists())
+        self.assertFalse(directory.exists())
+        self.assertEqual(self.now()['text'], '')
+        self.assertFalse(Path(f'/proc/{owner}').exists())
+
+    def test_live_rate_uses_synthesis_ratio_and_active_provider_limits(self):
+        self.run_speak('--set', '.rate', '0.5')
+        self.launch()
+        config = self.state / 'config.json'
+        settings = json.loads(config.read_text())
+        settings['provider'] = 'piper'
+        config.write_text(json.dumps(settings))
+        self.assertNotEqual(self.run_speak('--live-rate', '2.1', check=False).returncode, 0)
+        self.assertEqual(json.loads(self.run_speak('--live-rate', '1.5').stdout)['applied'], 'live')
+        self.assertEqual(self.now()['rate'], 1.5)
+        self.assertEqual(json.loads(config.read_text())['rate'], 1.5)
+        spec = importlib.util.spec_from_file_location('test_playback_helper', ROOT / 'lib/playback.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        metadata = json.loads((self.state / 'now-playing.json').read_text())
+        ipc = module.Ipc(self.state, metadata)
+        try:
+            self.assertEqual(ipc.command('get_property', 'speed'), 3.0)
+        finally:
+            ipc.close()
+        args = json.loads(Path(self.env['PLAYER_ARGS']).read_text())
+        for argument in ('--no-config', '--load-scripts=no', '--demuxer-lavf-format=s16le'):
+            self.assertIn(argument, args)
+
+    def test_paused_utterance_is_replaced_without_erasing_new_state(self):
+        first = self.launch('first')
+        self.run_speak('--pause')
+        second = self.launch('second')
+        first.communicate(timeout=3)
+        self.assertEqual(self.now()['text'], 'second')
+        self.assertEqual(self.now()['status'], 'speaking')
+        self.assertIsNone(second.poll())
+        self.assertEqual(len(list(self.state.glob('.player.*'))), 1)
+
+    def test_stale_player_identity_disables_control(self):
+        self.launch()
+        metadata = json.loads((self.state / 'now-playing.json').read_text())
+        player_file = self.state / metadata['session'] / 'player.json'
+        player = json.loads(player_file.read_text())
+        player['identity'] = 'wrong'
+        player_file.write_text(json.dumps(player))
+        self.run_speak('--pause')
+        self.assertFalse(self.now()['canPause'])
+        self.assertEqual(self.now()['status'], 'speaking')
+        self.assertEqual(json.loads(self.run_speak('--live-rate', '1.2').stdout)['applied'], 'next')
+
+    def test_text_is_bounded_and_removed_after_normal_completion(self):
+        job = self.launch('a' * 5000, env={**self.env, 'PLAYER_LIFETIME': '.6'}, raw=True)
+        state = self.now()
+        self.assertEqual(len(state['text']), 4096)
+        self.assertEqual(state['chars'], 5000)
+        _, error = job.communicate(timeout=4)
+        self.assertEqual(job.returncode, 0, error)
+        self.assertEqual(self.now()['status'], 'idle')
+        self.assertFalse((self.state / 'now-playing.json').exists())
+        self.assertFalse(list(self.state.glob('.player.*')))
+
+    def test_preparing_controls_are_noops_and_stop_cancels_capture(self):
+        marker = Path(self.temp.name, 'capture-started')
+        capture = self.tools / 'wl-paste'
+        capture.write_text('#!/usr/bin/env bash\ntouch "$CAPTURE_MARKER"\nsleep 30\n')
+        capture.chmod(0o755)
+        env = {**self.env, 'CAPTURE_MARKER': str(marker)}
+        job = subprocess.Popen([SPEAK, '--selection'], env=env,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.jobs.append(job)
+        for _ in range(100):
+            if marker.exists():
+                break
+            time.sleep(.01)
+        self.assertTrue(marker.exists())
+        self.assertEqual(self.now()['status'], 'preparing')
+        self.assertFalse(self.now()['canPause'])
+        for flag in ('--pause', '--resume', '--toggle-pause'):
+            self.run_speak(flag)
+            self.assertEqual(self.now()['status'], 'preparing')
+        self.assertEqual(json.loads(self.run_speak('--live-rate', '1.25').stdout)['applied'], 'next')
+        self.run_speak('--stop')
+        job.communicate(timeout=3)
+        self.assertEqual(self.now()['status'], 'idle')
+        self.assertFalse(Path(self.env['PLAYER_ARGS']).exists())
+
+    def test_missing_mpv_falls_back_to_pw_cat_without_audio(self):
+        tools = Path(self.temp.name, 'fallback-tools')
+        tools.mkdir()
+        marker = Path(self.temp.name, 'fallback-args')
+        player = tools / 'pw-cat'
+        player.write_text('#!' + sys.executable + '\nimport json, sys\n'
+                          + 'open(' + repr(str(marker)) + ', "w").write(json.dumps(sys.argv[1:]))\n'
+                          + 'sys.stdin.buffer.read()\n')
+        player.chmod(0o755)
+        env = {**self.env, 'PATH': str(tools), 'TTS_PLUGIN_DIR': str(ROOT),
+               'TTS_PLAYBACK_DIR': str(self.state)}
+        result = subprocess.run(['/usr/bin/bash', '-c', 'source "$TTS_PLUGIN_DIR/lib/play.sh"; play_raw 24000 1'],
+                                input=b'\0\0', capture_output=True, env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('--rate=24000', json.loads(marker.read_text()))
+        self.assertFalse(Path(self.env['PLAYER_ARGS']).exists())
+
+    def test_silent_verification_never_starts_a_player(self):
+        result = self.run_speak('--verify', 'fixture')
+        self.assertIn('ok', result.stdout)
+        self.assertFalse(Path(self.env['PLAYER_ARGS']).exists())
+
+    def test_unavailable_player_keeps_plain_speech_and_next_rate(self):
+        fixture = self.state / 'providers/fixture'
+        fixture.write_text('#!/usr/bin/env bash\n# ratemin: 0.5\n# ratemax: 2.0\ncat >/dev/null\nsleep 30\n')
+        job = self.launch(ready=False)
+        for _ in range(100):
+            if (self.state / 'now-playing.json').exists():
+                break
+            time.sleep(.02)
+        state = self.now()
+        self.assertEqual(state['text'], 'Hello friend.')
+        self.assertFalse(state['canPause'])
+        self.assertFalse(state['canLiveRate'])
+        self.assertIsNone(state['elapsed'])
+        self.run_speak('--pause')
+        self.assertEqual(self.now()['status'], 'speaking')
+        self.assertEqual(json.loads(self.run_speak('--live-rate', '1.25').stdout)['applied'], 'next')
+        self.run_speak('--stop')
+        job.communicate(timeout=3)
+
+    @unittest.skipUnless(shutil.which('mpv') and shutil.which('ffmpeg'), 'mpv/ffmpeg unavailable')
+    def test_real_mpv_lavf_pcm_has_no_eof_garbage(self):
+        import array
+        import math
+        real_mpv = shutil.which('mpv')
+        output = Path(self.temp.name, 'decoded.wav')
+        # Force a file-only AO after every player argument: no test can use a sink.
+        (self.tools / 'mpv').write_text('#!/usr/bin/env python3\n'
+            'import os, sys\n'
+            + 'os.execv(' + repr(real_mpv) + ', [' + repr(real_mpv)
+            + ', *sys.argv[1:], "--ao=pcm", ' + repr('--ao-pcm-file=' + str(output)) + '])\n')
+        samples = array.array('h', (round(12000 * math.sin(2 * math.pi * 600 * i / 24000))
+                                   for i in range(24000)))
+        samples.extend([0] * 12000)
+        directory = self.state / '.player.tailtest'
+        directory.mkdir(mode=0o700)
+        result = subprocess.run(['python3', ROOT / 'lib/playback.py', 'player', directory, '24000', '1'],
+                                input=samples.tobytes(), capture_output=True, env=self.env, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        decoded = subprocess.check_output(['ffmpeg', '-v', 'error', '-i', output,
+                                           '-f', 's16le', '-ac', '1', '-ar', '24000', '-'])
+        actual = array.array('h', decoded)
+        self.assertEqual(len(actual), len(samples))
+        self.assertEqual(max(map(abs, actual[-11000:])), 0)
+
+    def test_pause_shortcut_is_unbound_until_selected(self):
+        def bindings(*args):
+            return subprocess.run([BINDINGS, *args], env=self.env, capture_output=True,
+                                  text=True, check=True)
+        state = json.loads(bindings('status').stdout)
+        self.assertEqual(state['bindings']['pause']['chord'], '')
+        self.assertEqual(state['bindings']['pause']['label'], 'Pause / resume')
+        bindings('install')
+        lua = Path(self.temp.name, 'hypr', 'bindings.lua')
+        self.assertNotIn('--toggle-pause', lua.read_text())
+        bindings('set', 'pause', 'SUPER + ALT + P')
+        self.assertIn('--toggle-pause', lua.read_text())
+        bindings('set', 'pause', '')
+        self.assertNotIn('--toggle-pause', lua.read_text())
+
+
 class LegacyRenameTests(unittest.TestCase):
     """The plugin was renamed from omarchy-tts. Its old config, data and cache
     directories move to the new names on first use, and the shortcut block
