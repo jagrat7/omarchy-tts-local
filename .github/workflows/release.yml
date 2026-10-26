@@ -1,0 +1,45 @@
+name: Release
+
+# The manifest version is the release version. Merging a version bump to main
+# tags v<version> and publishes a release whose notes list the merged pull
+# requests, so tags, releases and manifest.json never drift apart.
+on:
+  push:
+    branches: [main]
+    paths: [manifest.json]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Publish a release for the manifest version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(jq -r .version manifest.json)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+            || { echo "::error::manifest.json version is not semantic: $version"; exit 1; }
+          tag="v$version"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "$tag is already released"
+            exit 0
+          fi
+          # A tag pushed by hand keeps its commit; only a new tag points here.
+          target=()
+          git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null || target=(--target "$GITHUB_SHA")
+          gh release create "$tag" "${target[@]}" --title "Local Text to Speech $version" \
+            --generate-notes --latest

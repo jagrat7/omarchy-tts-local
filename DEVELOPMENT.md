@@ -99,6 +99,15 @@ Run `python3 -m unittest discover -s tests -v` and the ShellCheck command from
 the README. The suite includes static QML interaction contracts; a full visual
 review still requires omarchy-shell.
 
+## Releasing
+
+`manifest.json`'s `version` is the release version. Bump it in a pull request;
+when that merges to `main`, the Release workflow tags `v<version>` and
+publishes a GitHub release whose notes list the merged pull requests. Pull
+request descriptions are the changelog, so there is no CHANGELOG.md. The
+marketplace lists a commit, not a release: after a release, submit the new
+`main` SHA through its Plugin verification form.
+
 ## Re-pinning Piper voices
 
 Voices download from one immutable revision of `rhasspy/piper-voices`, and
