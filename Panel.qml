@@ -19,7 +19,7 @@ Panel {
   readonly property color dim: Commons.Color.muted
   readonly property string ff: bar ? bar.fontFamily : Style.font.family
   property int currentTab: 0
-  readonly property var tabNames: ["Overview", "Providers", "Text", "Languages", "Keys"]
+  readonly property var tabNames: ["Overview", "Providers", "Preferences", "Languages", "Keys"]
   // Sections test the name, not the index, so adding or reordering a tab
   // touches only the list above.
   readonly property string currentTabName: tabNames[currentTab] || ""
@@ -285,6 +285,10 @@ Panel {
   function openUpwardWhenCramped(dropdown) {
     var popup = root.findPopup(dropdown)
     if (!popup || !popup.parent) return
+    // A press on the field itself used to close the list on press-outside
+    // and then reopen it on click. Only presses outside the field close it
+    // now, so a second click on the field toggles it shut.
+    popup.closePolicy = Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
     var anchor = popup.parent, gap = Style.spacing.xxs
     popup.y = Qt.binding(function() {
       var top = anchor.mapToItem(root, 0, 0).y
@@ -1240,7 +1244,6 @@ Panel {
           Item {
             width: parent.width; height: engineHeader.implicitHeight
             PanelSectionHeader { id: engineHeader; text: "Screen reading"; foreground: root.fg }
-            Text { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: "Captures stay on this computer"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
           }
           Component {
             id: ocrRow
@@ -1331,33 +1334,6 @@ Panel {
             onCancelled: root.ocrConfirmUninstall = ""
             onConfirmed: function(uninstallTarget) { controller.uninstall(uninstallTarget); root.ocrConfirmUninstall = "" }
           }
-          Item {
-            // A setting of the engine above, not a third group: caption-sized,
-            // with a little air between it and the last engine row.
-            width: parent.width; height: ocrHeader.implicitHeight + Style.space(6)
-            visible: root.activeOcrEngine && root.activeOcrEngine.supportsConfidence === true
-            Text { id: ocrHeader; anchors.bottom: parent.bottom; text: "Confidence floor"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-            Text { anchors.right: parent.right; anchors.bottom: parent.bottom; text: root.confidenceValue > 0 ? root.confidenceValue + "%" : "keep everything"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption }
-          }
-          Row {
-            width: parent.width; spacing: 8
-            visible: root.activeOcrEngine && root.activeOcrEngine.supportsConfidence === true
-            Button { width: 32; text: "−"; bordered: true; focusable: true; onClicked: { var s = Math.max(0, root.confidenceValue - 5); root.confidenceOverride = s; controller.setConfig(".ocr.minConfidence", s) } }
-            PanelSlider {
-              id: confidenceSlider
-              width: parent.width - 80; bar: root.bar
-              minimum: 0; maximum: 95; step: 5; integer: true
-              value: root.confidenceValue
-              function snap(v) { return Math.round(v / 5) * 5 }
-              onMoved: function(v) { var s = confidenceSlider.snap(v); root.confidenceOverride = s; confidenceSlider.liveValue = s }
-              onReleased: function(v) {
-                var s = confidenceSlider.snap(v)
-                root.confidenceOverride = s
-                controller.setConfig(".ocr.minConfidence", s)
-              }
-            }
-            Button { width: 32; text: "+"; bordered: true; focusable: true; onClicked: { var s = Math.min(95, root.confidenceValue + 5); root.confidenceOverride = s; controller.setConfig(".ocr.minConfidence", s) } }
-          }
           // One progress line for the tab: setup runs one engine at a time, speech
           // or OCR, so the two groups never need a line each.
           Text {
@@ -1372,8 +1348,8 @@ Panel {
 
         // Text -------------------------------------------------------------
         Column {
-          width: parent.width; spacing: 8; visible: !root.needsSetup && root.currentTabName === "Text"
-          PanelSectionHeader { text: "What gets spoken"; foreground: root.fg }
+          width: parent.width; spacing: 8; visible: !root.needsSetup && root.currentTabName === "Preferences"
+          PanelSectionHeader { text: "Text"; foreground: root.fg }
           Row {
             width: parent.width; spacing: 8
             Rectangle {
@@ -1405,24 +1381,36 @@ Panel {
           SettingToggle { label: "Announce skipped code blocks"; checked: controller.info.sanitizer?.announceCodeBlocks !== false; foreground: root.fg; onToggled: function(value) { controller.setConfig(".sanitizer.announceCodeBlocks", value) } }
           SettingToggle { label: "Strip Markdown symbols"; checked: controller.info.sanitizer?.stripMarkdown !== false; foreground: root.fg; onToggled: function(value) { controller.setConfig(".sanitizer.stripMarkdown", value) } }
           SettingToggle { label: "Expand abbreviations and units"; checked: controller.info.sanitizer?.expandUnits !== false; foreground: root.fg; onToggled: function(value) { controller.setConfig(".sanitizer.expandUnits", value) } }
-          // How much of a selection is read. It shapes what gets spoken, so
-          // it lives with the other text rules rather than with the voice.
+          // How much of a selection is read. It shapes what gets spoken, so it
+          // sits with the text rules, as one row like the toggles above.
           Item {
-            width: parent.width; height: limitHeader.implicitHeight
-            PanelSectionHeader { id: limitHeader; text: "Length limit"; foreground: root.fg }
-            Text { anchors.right: parent.right; text: controller.info.maxChars > 0 ? "~" + Math.max(1, Math.round(controller.info.maxChars / 900)) + " min" : "unlimited"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-          }
-          Row { width: parent.width; spacing: 8
-            Button { width: 48; text: "−500"; bordered: true; focusable: true; onClicked: controller.setConfig(".maxChars", Math.max(0, Number(controller.info.maxChars)-500)) }
-            TextField {
-              id: maxCharsField; width: parent.width - 112
-              text: String(controller.info.maxChars || 0); foreground: root.fg
-              maximumLength: 7
-              inputMethodHints: Qt.ImhDigitsOnly
-              validator: IntValidator { bottom: 0; top: 1048576 }
-              onEditingFinished: controller.setConfig(".maxChars", Math.max(0, Math.min(1048576, Number(text) || 0)))
+            width: parent.width; height: Math.max(limitLabel.implicitHeight, limitStepper.height)
+            Column {
+              id: limitLabel
+              anchors.left: parent.left; anchors.right: limitStepper.left; anchors.rightMargin: Style.space(8); anchors.verticalCenter: parent.verticalCenter
+              spacing: 1
+              Text { textFormat: Text.PlainText; text: "Length limit"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.body }
+              Text {
+                width: parent.width; elide: Text.ElideRight; textFormat: Text.PlainText
+                text: controller.info.maxChars > 0 ? "Characters per read · ~" + Math.max(1, Math.round(controller.info.maxChars / 900)) + " min" : "0 reads the whole selection"
+                color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+              }
             }
-            Button { width: 48; text: "+500"; bordered: true; focusable: true; onClicked: controller.setConfig(".maxChars", Math.min(1048576, Number(controller.info.maxChars||0)+500)) }
+            Row {
+              id: limitStepper
+              anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(4)
+              Button { width: Style.space(28); height: maxCharsField.height; text: "−"; bordered: true; focusable: true; Accessible.name: "500 fewer characters"; onClicked: controller.setConfig(".maxChars", Math.max(0, Number(controller.info.maxChars)-500)) }
+              TextField {
+                id: maxCharsField; width: Style.space(72)
+                text: String(controller.info.maxChars || 0); foreground: root.fg
+                maximumLength: 7
+                inputMethodHints: Qt.ImhDigitsOnly
+                validator: IntValidator { bottom: 0; top: 1048576 }
+                Accessible.name: "Length limit in characters"
+                onEditingFinished: controller.setConfig(".maxChars", Math.max(0, Math.min(1048576, Number(text) || 0)))
+              }
+              Button { width: Style.space(28); height: maxCharsField.height; text: "+"; bordered: true; focusable: true; Accessible.name: "500 more characters"; onClicked: controller.setConfig(".maxChars", Math.min(1048576, Number(controller.info.maxChars||0)+500)) }
+            }
           }
           Text {
             width: parent.width
@@ -1435,6 +1423,45 @@ Panel {
                     + " UTF-8 bytes per request. Non-Latin characters can use more than one byte."
                   : ""
             color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+          }
+          // Screen -------------------------------------------------------------
+          // How screen captures are read, once an engine is chosen on Providers.
+          // Only engines that report confidence have anything to set here.
+          Item { width: parent.width; height: Style.space(4); visible: confidenceRow.visible }
+          PanelSectionHeader { text: "Screen"; foreground: root.fg; visible: confidenceRow.visible }
+          Item {
+            id: confidenceRow
+            width: parent.width; height: Math.max(confidenceLabel.implicitHeight, confidenceSlider.implicitHeight)
+            visible: !!root.activeOcrEngine && root.activeOcrEngine.supportsConfidence === true
+            Column {
+              id: confidenceLabel
+              anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+              spacing: 1
+              Text { textFormat: Text.PlainText; text: "Confidence floor"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.body }
+              Text { textFormat: Text.PlainText; text: "Skip words read below it"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+            }
+            PanelSlider {
+              id: confidenceSlider
+              anchors.left: confidenceLabel.right; anchors.leftMargin: Style.space(12)
+              anchors.right: confidenceReadout.left; anchors.rightMargin: Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter; bar: root.bar
+              minimum: 0; maximum: 95; step: 5; integer: true
+              value: root.confidenceValue
+              function snap(v) { return Math.round(v / 5) * 5 }
+              onMoved: function(v) { var s = confidenceSlider.snap(v); root.confidenceOverride = s; confidenceSlider.liveValue = s }
+              onReleased: function(v) {
+                var s = confidenceSlider.snap(v)
+                root.confidenceOverride = s
+                controller.setConfig(".ocr.minConfidence", s)
+              }
+            }
+            Text {
+              id: confidenceReadout
+              anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(36); horizontalAlignment: Text.AlignRight
+              text: root.confidenceValue > 0 ? root.confidenceValue + "%" : "off"
+              color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption
+            }
           }
           Timer { id: previewDelay; interval: 180; onTriggered: controller.previewText(root.previewSource) }
         }

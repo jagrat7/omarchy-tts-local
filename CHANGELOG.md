@@ -5,6 +5,11 @@ Versioning.
 
 ## Unreleased
 
+- Preferences tab (was Text): a Text section with the sanitizer rules and a
+  compact length-limit stepper, and a Screen section holding the OCR
+  confidence floor, which moved off Providers. Providers now lists engines
+  only. Clicking the voice picker again closes its list instead of reopening
+  it. The README shows the Overview.
 - Overview tab, the new default: a teleprompter for what is being read, with
   the current sentence held in the middle, progress, play/pause, stop and a
   speed slider that retunes the reading in progress (via `--live-rate`).

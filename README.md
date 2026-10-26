@@ -11,7 +11,7 @@ clipboard, a copied image, the focused window, the whole monitor, or a region
 you drag. Speech (Piper or Kokoro) and OCR (Tesseract or EasyOCR) run locally.
 
 <p align="center">
-  <img src="docs/screenshots/provider.png" alt="Providers tab with Kokoro ONNX on the CPU and Piper not installed" width="560">
+  <img src="preview.png" alt="Overview tab: the sample text, play, speed slider and voice picker" width="420">
 </p>
 
 ## Features
@@ -84,8 +84,9 @@ Ready only after it has produced speech on this machine.
 Words below `ocr.minConfidence` (default 60) are dropped instead of read; set
 it to `0` to keep everything. Copied PNG, JPEG, WebP, BMP and TIFF images are
 read through OCR. Capture works over fullscreen Steam/Proton games, though
-that varies by game. The engine and confidence floor are under Screen reading
-on the Providers tab; recognition languages have their own Languages tab.
+that varies by game. The engine is chosen under Screen reading on the Providers
+tab, the confidence floor is under Screen on the Preferences tab, and
+recognition languages have their own Languages tab.
 
 ## Command line
 
@@ -109,7 +110,7 @@ speak-voice use en_GB-alba-medium  # make it the default
 
 Text goes through [`lib/sanitize.py`](lib/sanitize.py) first, which strips
 markdown, ANSI codes and box drawing and shortens URLs, paths and hashes. The
-Text tab previews it.
+Preferences tab previews it.
 
 Playback controls are also available from the CLI:
 
