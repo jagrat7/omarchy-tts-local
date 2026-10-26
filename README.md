@@ -8,7 +8,7 @@
 
 An Omarchy bar plugin that reads text aloud on a hotkey: the selection, the
 clipboard, a copied image, the focused window, the whole monitor, or a region
-you drag. Speech (Piper or Kokoro) and OCR (Tesseract or EasyOCR) run locally.
+you drag. Speech (Kokoro or Piper) and OCR (Tesseract or EasyOCR) run locally.
 
 <p align="center">
   <img src="preview.png" alt="Overview tab: the sample text, play, speed slider and voice picker" width="420">
@@ -16,16 +16,29 @@ you drag. Speech (Piper or Kokoro) and OCR (Tesseract or EasyOCR) run locally.
 
 ## Features
 
-- Local only. No cloud providers, accounts or API keys, and nothing you read
-  leaves the machine.
-- Kokoro ONNX: about 480 MB instead of about 6 GB for Kokoro PyTorch, and it
-  starts in under a second. Runs on CPU or an NVIDIA GPU.
-- Providers tab: speech engines and the screen-reading (OCR) engine in one
-  place. Both Kokoro engines share one row with a CPU/GPU switch. Engines
-  install, test and uninstall from the panel.
-- Engine downloads show their size first, show progress and can be
-  cancelled. The ONNX CPU and GPU engines share one copy of the model files,
-  and models are verified once rather than on every run.
+- **Reads anything on screen.** The selection, the clipboard (text or a copied
+  image), the focused window, the whole monitor, or a region you drag, each on
+  its own hotkey.
+- **Natural voices, fully local.** Kokoro runs on the CPU by default, and an
+  NVIDIA GPU option is there if you want it. Piper is the lighter choice for
+  slower PCs, with 170+ voices in 50+ languages. Nothing you read leaves the
+  machine, and there are no accounts or API keys.
+- **A player for what's being read.** The Overview tab follows along sentence
+  by sentence, with pause and resume, a progress bar and a speed slider that
+  changes the reading in progress.
+- **Screen reading that copes with real screens.** Tesseract or EasyOCR, a
+  Languages tab for recognition languages, and a confidence floor that drops
+  misread words. It works over many fullscreen games.
+- **Text cleaned up before it's spoken.** Markdown, terminal colour codes and
+  box drawing are stripped, long URLs, paths and hashes are shortened, and
+  units and abbreviations are read out. Preferences previews the result as
+  you type.
+- **Everything set up from the panel.** Engines install, test and uninstall
+  from Providers, showing their size first, with progress and a cancel button.
+  Shortcuts are rebound on the Keys tab, which only edits its own block of
+  `bindings.lua` and rolls back if Hyprland reports an error.
+- **Scriptable.** The same `speak` command the panel uses can speak, pause,
+  resume and change speed from a terminal or your own bindings.
 
 ## Install
 
