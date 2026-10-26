@@ -2,22 +2,6 @@
 # Configuration helpers shared by the CLI tools.  All writers go through an
 # atomic replace so the QML panel can never observe half-written JSON.
 
-# The plugin was renamed from omarchy-tts. Move its config, data and cache
-# directories to the new name once, before anything creates the new ones, so
-# installed engines and voices are kept. A destination that already exists is
-# never merged into or replaced; rename(2) keeps this safe when two tools race.
-# speak-setup and speak-bindings do the same in Python.
-tts_migrate_legacy_dirs() {
-  local base
-  for base in "${XDG_CONFIG_HOME:-$HOME/.config}" "${XDG_DATA_HOME:-$HOME/.local/share}" \
-              "${XDG_CACHE_HOME:-$HOME/.cache}"; do
-    if [[ ( -e "$base/omarchy-tts" || -L "$base/omarchy-tts" ) &&
-          ! -e "$base/omarchy-tts-local" && ! -L "$base/omarchy-tts-local" ]]; then
-      mv -T -n -- "$base/omarchy-tts" "$base/omarchy-tts-local" 2>/dev/null || true
-    fi
-  done
-}
-
 tts_config_file() {
   # Atomic replacement of a symlink path severs dotfile-manager links. Resolve
   # an existing link and replace its target instead; ordinary paths are left

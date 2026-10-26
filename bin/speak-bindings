@@ -25,11 +25,6 @@ os.umask(0o077)
 
 BEGIN = "-- >>> omarchy-tts-local bindings"
 END = "-- <<< omarchy-tts-local bindings"
-# The block versions before the rename wrote. It is still ours: it counts as
-# installed and is removed or replaced like the current one, so applying the
-# shortcuts once moves them to the new marker and plugin path.
-LEGACY_BEGIN = "-- >>> omarchy-tts bindings"
-LEGACY_END = "-- <<< omarchy-tts bindings"
 PLUGIN_ID = "io.github.jagrat7.omarchy-tts-local"
 BINDINGS_CONFIG_MAX_BYTES = 1_048_576
 BINDINGS_SOURCE_MAX_BYTES = 8_388_608
@@ -99,22 +94,6 @@ DEFAULTS = {
     "window": {"chord": "SUPER + ALT + W", "label": "Speak focused window", "command": f"{SPEAK_COMMAND} --window"},
     "screen": {"chord": "SUPER + ALT + SHIFT + R", "label": "Speak whole screen", "command": f"{SPEAK_COMMAND} --screen"},
 }
-
-
-def migrate_legacy_dirs() -> None:
-    """Move the pre-rename omarchy-tts config, data and cache directories to
-    their new names, keeping installed engines and voices. A destination that
-    already exists is never merged into or replaced (bin/speak-setup does
-    the same, and bin/speak and speak-voice through lib/config.sh)."""
-    for base in (config_home(),
-                 Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")),
-                 Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))):
-        old, new = base / "omarchy-tts", base / "omarchy-tts-local"
-        if (old.exists() or old.is_symlink()) and not (new.exists() or new.is_symlink()):
-            try:
-                old.rename(new)
-            except OSError:
-                pass  # another tool moved it first, or it cannot be moved
 
 
 def paths() -> tuple[Path, Path]:
@@ -206,11 +185,11 @@ def strip_block(text: str, begin: str, end_marker: str) -> str:
 
 
 def has_block(text: str) -> bool:
-    return BEGIN in text or LEGACY_BEGIN in text
+    return BEGIN in text
 
 
 def replace_block(text: str, block: str | None) -> str:
-    text = strip_block(strip_block(text, LEGACY_BEGIN, LEGACY_END), BEGIN, END)
+    text = strip_block(text, BEGIN, END)
     if block:
         text = text.rstrip() + "\n\n" + block + "\n"
     return text
@@ -518,10 +497,7 @@ def execute(args: argparse.Namespace, target: Path, config_path: Path) -> int:
         adoptable = [] if installed else adoptable_bindings(without_block)
         print(json.dumps({"installed": installed, "bindings": config,
                           "conflicts": conflicts, "adoptable": adoptable,
-                          "canInstall": not conflicts,
-                          # Written before the rename: still works only while
-                          # the old plugin path does, until applied again.
-                          "legacy": LEGACY_BEGIN in full_text}))
+                          "canInstall": not conflicts}))
         return 0
     if args.command == "set":
         candidate = copy.deepcopy(config)
@@ -572,7 +548,6 @@ def main() -> int:
     set_parser.add_argument("action", choices=DEFAULTS)
     set_parser.add_argument("chord")
     args = parser.parse_args()
-    migrate_legacy_dirs()
     target, config_path = paths()
 
     # An install and a shortcut edit update two files as one logical action.

@@ -1607,7 +1607,6 @@ Panel {
             text: "These shortcuts already work; they were written by hand rather than by this panel. Taking them over lets you change them here. Nothing is duplicated."
             color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
           }
-          Text { width: parent.width; visible: controller.bindings.legacy === true; wrapMode: Text.WordWrap; text: "These shortcuts still point at the plugin's old location from before it was renamed. Apply changes to update them."; color: Commons.Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
           Text { width: parent.width; wrapMode: Text.WordWrap; text: "Only the marked omarchy-tts-local block in bindings.lua is managed. Every write is backed up and rolled back if Hyprland reports an error."; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
           Text { width: parent.width; visible: root.realConflicts.length > 0; wrapMode: Text.WordWrap; text: "Choose different shortcuts for: " + root.realConflicts.join(", "); color: Commons.Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
         }

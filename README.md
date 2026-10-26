@@ -40,17 +40,6 @@ runs on the CPU (about 480 MB). If Kokoro can't run on this computer, the
 screen says why and offers Piper instead. Shortcuts are set up from the Keys
 tab, and other providers from the Providers tab.
 
-<details>
-<summary>Upgrading from <code>io.github.hikari112.tts</code> or an older build</summary>
-
-On first run, `~/.config/omarchy-tts`, `~/.local/share/omarchy-tts` and
-`~/.cache/omarchy-tts` are moved to `omarchy-tts-local`, so engines, voices
-and settings are kept. Remove the old plugin and press **Apply changes** on
-the Keys tab to repoint the shortcuts. A selected cloud provider is switched
-to Piper.
-
-</details>
-
 ## Keys
 
 | Key | Action |
@@ -165,8 +154,12 @@ printing text.
 ## Requirements
 
 `bash`, `wl-clipboard`, `jq`, `python3`, `flock` and PipeWire or ALSA. Screen
-reading also needs `tesseract`, `grim` and `slurp`; downloads use `curl`. All
-are in Omarchy or the Arch repos.
+reading also needs `tesseract`, `grim` and `slurp`; downloads use `curl`.
+Pause and live speed need `mpv`. Engines are built with `uv`; if it is
+missing, setup installs it with `pacman` through `pkexec`, as it does
+Tesseract language packs, after asking for your password. `hyprpicker`
+(freezes the screen while you drag a region) and `notify-send` (error
+messages) are used when present. All are in Omarchy or the Arch repos.
 
 ## Privacy and security
 
@@ -185,8 +178,6 @@ omarchy plugin remove io.github.jagrat7.omarchy-tts-local
 
 Downloaded data stays in `~/.local/share/omarchy-tts-local`,
 `~/.config/omarchy-tts-local` and `~/.cache/omarchy-tts-local`.
-`speak-setup cleanup --yes` removes API keys left in the keyring by older
-versions.
 
 ## Development
 

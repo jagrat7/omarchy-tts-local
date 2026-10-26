@@ -2140,9 +2140,9 @@ class CliConfigTests(unittest.TestCase):
         self.assertEqual(victim.read_text(), "keep me")
 
 
-class LegacyKeyCleanupTests(unittest.TestCase):
-    """Cleanup still clears API keys that versions with cloud providers kept
-    in the keyring under the old service name."""
+class CleanupTests(unittest.TestCase):
+    """Cleanup removes the managed shortcuts and nothing else; the plugin
+    keeps no credentials, so it has no reason to touch the keyring."""
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -2156,75 +2156,36 @@ class LegacyKeyCleanupTests(unittest.TestCase):
                     "XDG_DATA_HOME": str(self.home / "data"),
                     "XDG_RUNTIME_DIR": str(self.home / "run"),
                     "DBUS_SESSION_BUS_ADDRESS": "unix:path=/nonexistent"}
+        self.env.pop("HYPRLAND_INSTANCE_SIGNATURE", None)
         (self.home / "run").mkdir()
 
     def tearDown(self):
         self.temp.cleanup()
 
-    def write_secret_tool(self, source):
-        tool = self.tools / "secret-tool"
-        tool.write_text("#!/usr/bin/env bash\n" + source)
-        tool.chmod(0o755)
+    def test_cleanup_needs_confirmation(self):
+        result = subprocess.run([SETUP, "cleanup"], env=self.env, text=True,
+                                capture_output=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(json.loads(result.stdout)["code"], "confirmation_required")
 
-    def test_cleanup_reports_keyring_failures_and_returns_nonzero(self):
-        self.write_secret_tool(
-            "case ${1:-} in\n"
-            "  lookup) exit 0 ;;\n"
-            "  clear) exit 7 ;;\n"
-            "  store) cat >/dev/null; exit 0 ;;\n"
-            "esac\n"
-        )
-        result = subprocess.run(
-            [SETUP, "cleanup", "--yes"], env=self.env,
-            text=True, capture_output=True,
-        )
-        payload = json.loads(result.stdout)
-        self.assertEqual(result.returncode, 1)
-        self.assertFalse(payload["ok"])
-        self.assertTrue(any("API key" in failure for failure in payload["failures"]))
-
-    def test_cleanup_clears_legacy_keys_under_the_old_service_name(self):
+    def test_cleanup_removes_shortcuts_and_never_touches_the_keyring(self):
         calls = self.home / "secret-tool-calls"
-        self.write_secret_tool(
-            f'printf "%s\\n" "$*" >> {calls}\n'
-            "case ${1:-} in\n"
-            "  lookup) [[ $5 == openai ]] && exit 0; exit 1 ;;\n"
-            "  clear) exit 0 ;;\n"
-            "esac\n"
-        )
-        result = subprocess.run(
-            [SETUP, "cleanup", "--yes"], env=self.env,
-            text=True, capture_output=True,
-        )
-        payload = json.loads(result.stdout)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("stored API keys (openai)", payload["removed"])
-        self.assertIn("clear service omarchy-tts key openai", calls.read_text())
+        tool = self.tools / "secret-tool"
+        tool.write_text(f'#!/usr/bin/env bash\necho "$*" >> {calls}\n')
+        tool.chmod(0o755)
+        hypr = self.home / "config" / "hypr"
+        hypr.mkdir(parents=True)
+        lua = hypr / "bindings.lua"
+        lua.write_text('o.bind("SUPER + B", "Browser", "browser")\n')
+        subprocess.run([BINDINGS, "install"], env=self.env, capture_output=True, check=True)
+        self.assertIn("-- >>> omarchy-tts-local bindings", lua.read_text())
 
-    def test_cleanup_without_a_keyring_helper_still_succeeds(self):
-        env = {**self.env, "PATH": "/usr/bin:/bin"}
-        if shutil.which("secret-tool", path=env["PATH"]):
-            self.skipTest("a system secret-tool is installed")
-        result = subprocess.run(
-            [SETUP, "cleanup", "--yes"], env=env, text=True, capture_output=True,
-        )
-        self.assertEqual(json.loads(result.stdout)["failures"], [])
-
-    def test_cleanup_does_not_claim_absent_keys_were_removed(self):
-        self.write_secret_tool(
-            "case ${1:-} in\n"
-            "  lookup) exit 1 ;;\n"
-            "  clear) exit 0 ;;\n"
-            "esac\n"
-        )
-        result = subprocess.run(
-            [SETUP, "cleanup", "--yes"], env=self.env,
-            text=True, capture_output=True,
-        )
-        payload = json.loads(result.stdout)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(payload["ok"])
-        self.assertFalse(any("API key" in item for item in payload["removed"]))
+        result = subprocess.run([SETUP, "cleanup", "--yes"], env=self.env, text=True,
+                                capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["removed"], ["shortcuts"])
+        self.assertEqual(lua.read_text().strip(), 'o.bind("SUPER + B", "Browser", "browser")')
+        self.assertFalse(calls.exists(), "cleanup consulted the keyring")
 
 
 class ProviderHealthTests(unittest.TestCase):
@@ -2769,16 +2730,17 @@ while time.monotonic() < deadline:
         self.assertNotIn('--toggle-pause', lua.read_text())
 
 
-class LegacyRenameTests(unittest.TestCase):
-    """The plugin was renamed from omarchy-tts. Its old config, data and cache
-    directories move to the new names on first use, and the shortcut block
-    written under the old name is still recognised as ours."""
+class OtherPluginDataTests(unittest.TestCase):
+    """Files this plugin did not create are not its to move. Directories named
+    after the omarchy-tts plugin, another plugin's shortcut block and Piper's
+    shared voice directory stay exactly where and as they are."""
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.home = Path(self.temp.name)
         self.bases = {name: self.home / name for name in ("config", "data", "cache")}
         self.env = {**os.environ,
+                    "HOME": str(self.home),
                     "XDG_CONFIG_HOME": str(self.bases["config"]),
                     "XDG_DATA_HOME": str(self.bases["data"]),
                     "XDG_CACHE_HOME": str(self.bases["cache"]),
@@ -2789,82 +2751,53 @@ class LegacyRenameTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def write_legacy(self):
+    def test_no_tool_moves_another_plugins_or_pipers_files(self):
         old = {name: base / "omarchy-tts" for name, base in self.bases.items()}
-        old["config"].mkdir(parents=True)
-        (old["config"] / "config.json").write_text(json.dumps({"provider": "kokoro"}))
-        (old["data"] / "voices" / "piper").mkdir(parents=True)
-        (old["data"] / "voices" / "piper" / "kept.onnx").write_text("voice")
-        old["cache"].mkdir(parents=True)
-        (old["cache"] / "health.json").write_text("{}")
-        return old
-
-    def assert_moved(self, old):
-        for name, base in self.bases.items():
-            self.assertFalse(old[name].exists(), name)
-        new = {name: base / "omarchy-tts-local" for name, base in self.bases.items()}
-        self.assertEqual(json.loads((new["config"] / "config.json").read_text())["provider"],
-                         "kokoro")
-        self.assertEqual((new["data"] / "voices" / "piper" / "kept.onnx").read_text(), "voice")
-        self.assertTrue((new["cache"] / "health.json").exists())
-
-    def test_speak_moves_old_directories_before_creating_new_ones(self):
-        old = self.write_legacy()
-        result = subprocess.run([SPEAK, "--info"], env=self.env, text=True, capture_output=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["provider"], "kokoro")
-        self.assert_moved(old)
-
-    def test_every_other_tool_moves_old_directories_too(self):
-        for tool in ((SETUP, "status"), (BINDINGS, "status"),
+        for directory in old.values():
+            directory.mkdir(parents=True)
+            (directory / "kept").write_text("theirs")
+        shared = self.home / ".local" / "share" / "piper-voices"
+        shared.mkdir(parents=True)
+        (shared / "en_US-amy-medium.onnx").write_text("model")
+        (shared / "en_US-amy-medium.onnx.json").write_text("{}")
+        for tool in ((SPEAK, "--info"), (SETUP, "status"), (BINDINGS, "status"),
                      (ROOT / "bin" / "speak-voice", "list")):
             with self.subTest(tool=tool[0].name):
-                old = self.write_legacy()
                 subprocess.run(list(tool), env=self.env, capture_output=True, check=True)
-                self.assert_moved(old)
-                for base in self.bases.values():
-                    shutil.rmtree(base / "omarchy-tts-local")
+                for directory in old.values():
+                    self.assertEqual((directory / "kept").read_text(), "theirs")
+                self.assertEqual(sorted(p.name for p in shared.iterdir()),
+                                 ["en_US-amy-medium.onnx", "en_US-amy-medium.onnx.json"])
 
-    def test_an_existing_new_directory_is_never_merged_or_replaced(self):
-        old = self.write_legacy()
-        current = self.bases["config"] / "omarchy-tts-local"
-        current.mkdir(parents=True)
-        (current / "config.json").write_text(json.dumps({"provider": "piper"}))
-        subprocess.run([SPEAK, "--info"], env=self.env, capture_output=True, check=True)
-        self.assertEqual(json.loads((current / "config.json").read_text())["provider"], "piper")
-        self.assertTrue((old["config"] / "config.json").exists(),
-                        "the old directory was discarded instead of left alone")
-
-    def test_pre_rename_shortcut_block_is_recognised_and_rewritten(self):
+    def test_another_plugins_shortcut_block_is_left_alone(self):
         hypr = self.bases["config"] / "hypr"
         hypr.mkdir(parents=True)
         lua = hypr / "bindings.lua"
-        lua.write_text(
-            'o.bind("SUPER + B", "Browser", "browser")\n\n'
-            "-- >>> omarchy-tts bindings\n"
-            'o.bind("SUPER + ALT + E", "Speak selection", '
-            '"/old/plugins/io.github.hikari112.tts/bin/speak --toggle")\n'
-            "-- <<< omarchy-tts bindings\n"
-        )
+
+        def block(chord):
+            return ("-- >>> omarchy-tts bindings\n"
+                    f'o.bind("{chord}", "Speak selection", '
+                    '"/old/plugins/io.github.hikari112.tts/bin/speak --toggle")\n'
+                    "-- <<< omarchy-tts bindings\n")
+
+        # Sharing a chord with ours is a conflict to resolve, not a block to take.
+        clashing = 'o.bind("SUPER + B", "Browser", "browser")\n\n' + block("SUPER + ALT + E")
+        lua.write_text(clashing)
         status = json.loads(subprocess.run([BINDINGS, "status"], env=self.env, text=True,
                                            capture_output=True, check=True).stdout)
-        self.assertTrue(status["installed"])
-        self.assertTrue(status["legacy"])
-        self.assertEqual(status["conflicts"], [], "our own old block was read as a conflict")
+        self.assertFalse(status["installed"])
+        self.assertNotIn("legacy", status)
+        self.assertEqual(status["conflicts"], ["SUPER + ALT + E"])
+        install = subprocess.run([BINDINGS, "install"], env=self.env, capture_output=True)
+        self.assertNotEqual(install.returncode, 0)
+        self.assertEqual(lua.read_text(), clashing)
 
+        theirs = block("SUPER + CTRL + E")
+        lua.write_text('o.bind("SUPER + B", "Browser", "browser")\n\n' + theirs)
         subprocess.run([BINDINGS, "install"], env=self.env, capture_output=True, check=True)
-        text = lua.read_text()
-        self.assertNotIn("-- >>> omarchy-tts bindings", text)
-        self.assertNotIn("hikari112", text)
-        self.assertIn("-- >>> omarchy-tts-local bindings", text)
-        self.assertEqual(text.count("SUPER + ALT + E"), 1)
-        self.assertIn('"Browser"', text)
-        status = json.loads(subprocess.run([BINDINGS, "status"], env=self.env, text=True,
-                                           capture_output=True, check=True).stdout)
-        self.assertFalse(status["legacy"])
-
+        self.assertIn(theirs, lua.read_text())
         subprocess.run([BINDINGS, "remove"], env=self.env, capture_output=True, check=True)
-        self.assertEqual(lua.read_text().strip(), 'o.bind("SUPER + B", "Browser", "browser")')
+        self.assertIn(theirs, lua.read_text())
 
 
 class BindingAdoptionTests(unittest.TestCase):

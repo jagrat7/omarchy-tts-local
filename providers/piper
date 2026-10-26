@@ -3,7 +3,7 @@
 # title: Piper
 # installsize: about 230 MB
 # installnote: Engine and one voice.
-# probe: ([[ -x "${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/piper/bin/piper" && "$(cat "${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/piper/.lock-sha256" 2>/dev/null)" == "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/piper.lock" | cut -d' ' -f1)" ]] || command -v piper >/dev/null) && (for model in "${PIPER_VOICES_DIR:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/voices/piper}"/*.onnx "$HOME/.local/share/piper-voices"/*.onnx; do [[ -s "$model" && -s "$model.json" ]] && exit 0; done; exit 1)
+# probe: ([[ -x "${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/piper/bin/piper" && "$(cat "${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/piper/.lock-sha256" 2>/dev/null)" == "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/piper.lock" | cut -d' ' -f1)" ]] || command -v piper >/dev/null) && (for model in "${PIPER_VOICES_DIR:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/voices/piper}"/*.onnx; do [[ -s "$model" && -s "$model.json" ]] && exit 0; done; exit 1)
 # install: managed venv · piper-tts==1.7.0
 # voices: downloadable
 # ratemin: 0.5
@@ -41,7 +41,6 @@ VOICE="${TTS_VOICE:-}"
 [[ -z "$VOICE" || "$VOICE" == "null" ]] && VOICE="en_US-amy-medium"
 
 if [[ -f "$VOICE" ]]; then MODEL="$VOICE"; else MODEL="$VOICES_DIR/$VOICE.onnx"; fi
-[[ -f "$MODEL" ]] || MODEL="$HOME/.local/share/piper-voices/$VOICE.onnx"
 
 if [[ ! -s "$MODEL" || ! -s "$MODEL.json" ]]; then
   echo "speak: piper voice not found: $MODEL" >&2

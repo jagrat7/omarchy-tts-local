@@ -59,7 +59,6 @@ DIGESTS="$PLUGIN_DIR/lib/piper-voices.sha256"
 # Resolved from the installed plugin directory.
 # shellcheck disable=SC1091
 source "$PLUGIN_DIR/lib/config.sh"
-tts_migrate_legacy_dirs
 
 case "$1" in
   status|cancel|browse) ;;
@@ -73,40 +72,6 @@ mkdir -p "$STATE_DIR"
   printf 'speak-voice: unsafe runtime directory: %s\n' "$STATE_DIR" >&2; exit 1;
 }
 chmod 700 "$STATE_DIR" || exit 1
-
-# Voices used to live in ~/.local/share/piper-voices. The player still reads
-# that path, so those voices work - but this tool never scanned it, so they
-# showed as available to download and could not be removed at all. Move them
-# into the canonical directory once, so there is a single answer to "what is
-# installed".
-migrate_legacy_voices() {
-  local legacy="$HOME/.local/share/piper-voices"
-  [[ -d "$legacy" ]] || return 0
-  [[ "$(readlink -f "$legacy")" != "$(readlink -f "$VOICES_DIR")" ]] || return 0
-  local model name files_lock_fd
-  exec {files_lock_fd}>>"$FILES_LOCK" || return 1
-  flock "$files_lock_fd" || { exec {files_lock_fd}>&-; return 1; }
-  for model in "$legacy"/*.onnx; do
-    [[ -f "$model" && ! -L "$model" && -s "$model" &&
-       -f "$model.json" && ! -L "$model.json" && -s "$model.json" ]] || continue
-    name="$(basename "$model")"
-    [[ ! -e "$VOICES_DIR/$name" && ! -L "$VOICES_DIR/$name" &&
-       ! -e "$VOICES_DIR/$name.json" && ! -L "$VOICES_DIR/$name.json" ]] || continue
-    mv -T -n -- "$model" "$VOICES_DIR/$name" 2>/dev/null || continue
-    if [[ -e "$model" || ! -e "$VOICES_DIR/$name" ]] ||
-       ! mv -T -n -- "$model.json" "$VOICES_DIR/$name.json" 2>/dev/null ||
-       [[ -e "$model.json" || ! -e "$VOICES_DIR/$name.json" ]]; then
-      mv -T -n -- "$VOICES_DIR/$name" "$model" 2>/dev/null || true
-    fi
-  done
-  rmdir "$legacy" 2>/dev/null || true
-  flock -u "$files_lock_fd"
-  exec {files_lock_fd}>&-
-}
-case "$1" in
-  list|available|add|remove|use)
-    migrate_legacy_voices || { printf 'speak-voice: could not migrate legacy voices safely\n' >&2; exit 1; } ;;
-esac
 
 case "$1" in
   list|remove|use)

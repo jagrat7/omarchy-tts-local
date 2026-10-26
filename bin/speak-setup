@@ -276,11 +276,8 @@ def nonempty_file(path: Path) -> bool:
 
 def status() -> dict:
     voice = VOICES / f"{DEFAULT_VOICE}.onnx"
-    legacy_voice = DATA_HOME / "piper-voices" / f"{DEFAULT_VOICE}.onnx"
     engine_ready = engine_built_from_lock("piper") or shutil.which("piper") is not None
-    voice_ready = ((nonempty_file(voice) and nonempty_file(Path(f"{voice}.json")))
-                   or (nonempty_file(legacy_voice)
-                       and nonempty_file(Path(f"{legacy_voice}.json"))))
+    voice_ready = nonempty_file(voice) and nonempty_file(Path(f"{voice}.json"))
     bindings = False
     try:
         result = subprocess.run([BINDINGS_TOOL, "status"], text=True,
@@ -630,27 +627,6 @@ def install_language(code: str) -> None:
 # the kokoro lock as a hash-pinned wheel URL, so it installs with everything
 # else and spaCy never reaches for its own downloader.
 OCR_ENGINES = {"easyocr"}
-# API keys earlier versions stored for their cloud services. Cleanup still
-# clears them, so a key saved before the cloud providers were removed is not
-# left behind in the keyring.
-LEGACY_KEYRING_SERVICE = "omarchy-tts"
-LEGACY_CLOUD_KEYS = ("openai", "elevenlabs", "google", "gemini")
-
-
-def migrate_legacy_dirs() -> None:
-    """Move the pre-rename omarchy-tts config, data and cache directories to
-    their new names, keeping installed engines and voices. A destination that
-    already exists is never merged into or replaced (bin/speak and
-    speak-voice do the same through lib/config.sh)."""
-    for base in (CONFIG_HOME, DATA_HOME, CACHE_HOME):
-        old, new = base / "omarchy-tts", base / "omarchy-tts-local"
-        if (old.exists() or old.is_symlink()) and not (new.exists() or new.is_symlink()):
-            try:
-                old.rename(new)
-            except OSError:
-                pass  # another tool moved it first, or it cannot be moved
-
-
 def build_kokoro(target: Path) -> None:
     uv = ensure_uv()
     write_state("running", "engine", 20, "Installing the Kokoro speech engine")
@@ -1143,28 +1119,8 @@ def invalidate_health(key: str) -> bool:
             os.close(lock_fd)
 
 
-def keyring_contains(tool: str, provider: str) -> bool:
-    """Return key presence while distinguishing absence from keyring failure."""
-    try:
-        result = subprocess.run(
-            [tool, "lookup", "service", LEGACY_KEYRING_SERVICE, "key", provider],
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
-            timeout=HELPER_TIMEOUT,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError("The system keyring did not respond") from exc
-    if result.returncode == 0:
-        return True
-    # libsecret uses status 1 with no diagnostic for an absent item. Any other
-    # result is operational trouble, not proof that no credential exists.
-    if result.returncode == 1 and not result.stderr.strip():
-        return False
-    raise RuntimeError("The system keyring did not respond")
-
-
 def cleanup() -> int:
     removed: list[str] = []
-    removed_keys: list[str] = []
     failures: list[str] = []
     try:
         binding_result = subprocess.run(
@@ -1178,30 +1134,6 @@ def cleanup() -> int:
             removed.append("shortcuts")
         else:
             failures.append("Could not remove managed shortcuts")
-    tool = shutil.which("secret-tool")
-    if tool:
-        for provider in LEGACY_CLOUD_KEYS:
-            try:
-                present = keyring_contains(tool, provider)
-            except RuntimeError:
-                failures.append(f"Could not inspect the {provider} API key")
-                continue
-            if present:
-                try:
-                    cleared = subprocess.run(
-                        [tool, "clear", "service", LEGACY_KEYRING_SERVICE, "key", provider],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                        timeout=HELPER_TIMEOUT,
-                    )
-                except (OSError, subprocess.TimeoutExpired):
-                    failures.append(f"Could not remove the {provider} API key")
-                else:
-                    if cleared.returncode:
-                        failures.append(f"Could not remove the {provider} API key")
-                    else:
-                        removed_keys.append(provider)
-        if removed_keys:
-            removed.append("stored API keys (" + ", ".join(removed_keys) + ")")
     ok = not failures
     emit(ok=ok, removed=removed, failures=failures)
     return 0 if ok else 1
@@ -1301,7 +1233,6 @@ def main() -> int:
     uninstall_parser = sub.add_parser("uninstall")
     uninstall_parser.add_argument("target")
     args = parser.parse_args()
-    migrate_legacy_dirs()
     try:
         ensure_private_runtime()
     except (OSError, RuntimeError) as exc:
@@ -1316,7 +1247,7 @@ def main() -> int:
     elif args.command == "cleanup":
         if not args.yes:
             emit(ok=False, code="confirmation_required",
-                 message="cleanup removes managed shortcuts and any API keys older versions stored; rerun with --yes")
+                 message="cleanup removes managed shortcuts; rerun with --yes")
             return 2
         return cleanup()
     elif args.command == "diagnostics": diagnostics()
