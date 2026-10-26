@@ -31,7 +31,8 @@ fills missing defaults without replacing existing values. Schema 5 removes the
 retired cloud providers' settings and moves a configuration that selected one
 of them (or a cloud OCR engine) to Piper or Tesseract. Schema 6 maps a saved
 `.ui.lastTab` from the old six tabs onto the five, so a panel last left on
-Screen reopens on Providers. Invalid JSON, oversized
+Screen reopens on Providers. The panel now always opens on Overview, so
+`.ui.lastTab` is still validated but no longer read. Invalid JSON, oversized
 files, and unsafe nested shapes are preserved with an `.invalid.<timestamp>`
 suffix before type-safe defaults are restored. Writes are limited to an
 allowlist, serialized, and use an atomic rename with mode 0600. Existing config

@@ -19,7 +19,7 @@ Panel {
   readonly property color dim: Commons.Color.muted
   readonly property string ff: bar ? bar.fontFamily : Style.font.family
   property int currentTab: 0
-  readonly property var tabNames: ["Providers", "Voice", "Text", "Languages", "Keys"]
+  readonly property var tabNames: ["Overview", "Providers", "Text", "Languages", "Keys"]
   // Sections test the name, not the index, so adding or reordering a tab
   // touches only the list above.
   readonly property string currentTabName: tabNames[currentTab] || ""
@@ -250,6 +250,90 @@ Panel {
                                         && root.activeProvider.rateMax !== null
   readonly property real rateMinimum: root.rateSupported ? Number(root.activeProvider.rateMin) : 1
   readonly property real rateMaximum: root.rateSupported ? Number(root.activeProvider.rateMax) : 1
+  // Overview -------------------------------------------------------------
+  readonly property string playState: controller.status
+  property bool voiceOpen: false
+  readonly property bool voicesDownloadable: !root.activeProvider || root.activeProvider.voices === "downloadable"
+  // Nothing to speak with, whoever supplies the voices; only the download
+  // offer depends on whether this provider's voices can be fetched.
+  readonly property bool voiceMissing: controller.infoLoaded && root.voiceOptions.length === 0
+  // With no voice the row stays one line and points at where to get one:
+  // the catalogue when this engine downloads voices, otherwise Providers.
+  onVoiceMissingChanged: if (root.voiceMissing) root.voiceOpen = false
+  readonly property bool voiceFetchable: root.voiceMissing && !!root.activeProvider && root.activeProvider.voices === "downloadable"
+  function voiceRowActivate() {
+    if (root.voiceFetchable) root.openCatalogue()
+    else if (root.voiceMissing) root.currentTab = root.tabNames.indexOf("Providers")
+    else root.voiceOpen = !root.voiceOpen
+  }
+  readonly property int prompterPx: Style.fontPx(1.25)
+  function playSample() { if (!root.voiceMissing && root.sampleText.trim() !== "") controller.speak(root.sampleText) }
+  function openCatalogue() { root.browsing = true; root.voiceFilter = ""; controller.loadCatalogue() }
+  // One speed control serves both cases: idle it is a setting, while reading
+  // it also asks the backend to retune the utterance already playing.
+  function applyRate(r) {
+    var s = Math.max(root.rateMinimum, Math.min(root.rateMaximum, Math.round(r * 20) / 20))
+    root.rateOverride = s
+    if (controller.speaking) controller.setLiveRate(s)
+    else controller.setConfig(".rate", s.toFixed(2))
+  }
+  function clockText(seconds) {
+    var s = Math.max(0, Math.round(seconds))
+    return Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2)
+  }
+  // The poll lands every half second; between answers the clock runs on
+  // locally so the bar and the highlighted phrase move smoothly.
+  property real nowPlayingStamp: Date.now()
+  property real clock: Date.now()
+  Connections { target: controller; function onNowPlayingChanged() { root.nowPlayingStamp = Date.now(); root.clock = root.nowPlayingStamp } }
+  Timer { interval: 250; repeat: true; running: root.opened && root.playState === "speaking"; onTriggered: root.clock = Date.now() }
+  readonly property real npDuration: Math.max(0, Number(controller.nowPlaying.duration) || 0)
+  readonly property real npElapsed: {
+    var base = Number(controller.nowPlaying.elapsed) || 0
+    if (root.playState === "speaking") base += Math.max(0, root.clock - root.nowPlayingStamp) / 1000
+    return root.npDuration > 0 ? Math.min(root.npDuration, base) : base
+  }
+  readonly property real npProgress: root.npDuration > 0 ? root.npElapsed / root.npDuration : 0
+  // A string, so a poll that returns the same text does not rebuild the
+  // prompter (an array would be a new value every time and reset the list).
+  readonly property string promptText: String(controller.nowPlaying.text || "")
+  // Sentences, with any too long to read at a glance (OCR often has no
+  // punctuation at all) cut at a word boundary so each fits the screen.
+  readonly property var phrases: {
+    var text = root.promptText, out = [], start = 0
+    function push(end) {
+      var piece = text.slice(start, end), lead = piece.length - piece.replace(/^\s+/, "").length
+      var at = start + lead
+      piece = piece.trim()
+      while (piece.length > 160) {
+        var cut = piece.lastIndexOf(" ", 140)
+        if (cut < 60) cut = 140
+        out.push({ text: piece.slice(0, cut).trim(), start: at })
+        at += cut; piece = piece.slice(cut).replace(/^\s+/, function(m) { at += m.length; return "" })
+      }
+      if (piece.length) out.push({ text: piece, start: at })
+      start = end
+    }
+    for (var i = 0; i < text.length; ++i) {
+      var c = text.charAt(i)
+      if (c === "\n") { push(i + 1); continue }
+      if (".!?…".indexOf(c) < 0) continue
+      var j = i + 1
+      while (j < text.length && ".!?…\"'”’)]".indexOf(text.charAt(j)) >= 0) j++
+      if (j >= text.length || /\s/.test(text.charAt(j))) { push(j); i = j - 1 }
+    }
+    push(text.length)
+    return out
+  }
+  // Speech runs at an even pace closely enough to place the reader by the
+  // share of audio already played.
+  readonly property int phraseIndex: {
+    var list = root.phrases
+    if (!list.length) return 0
+    var at = root.promptText.length * root.npProgress, found = 0
+    for (var i = 0; i < list.length; ++i) if (list[i].start <= at) found = i
+    return found
+  }
   readonly property int confidenceValue:
     confidenceOverride >= 0 ? confidenceOverride
                             : Number(controller.info.ocr?.minConfidence ?? 60)
@@ -373,14 +457,15 @@ Panel {
   }
 
   TtsController { id: controller; statusSource: root.hostWidget; panelOpen: root.opened }
-  // Restoring the tab used to run on a callLater, which fires long before the
-  // 200 ms settings read returns - so it restored from whatever was loaded
-  // last time and the panel opened on the wrong tab. Wait for real data.
+  // The panel always opens on the Overview, the player for whatever is being
+  // read. The sample text is still restored, but only once real settings
+  // have arrived; a callLater fires long before the 200 ms read returns.
   property bool restorePending: false
 
   onOpenedChanged: {
     if (opened) {
       restorePending = true
+      currentTab = 0
       controller.refresh(); controller.refreshBindings(); controller.refreshSetup(); controller.refreshDownload()
     }
   }
@@ -388,7 +473,6 @@ Panel {
   function restoreFromInfo() {
     if (!restorePending || !controller.infoLoaded) return
     restorePending = false
-    currentTab = Math.max(0, Math.min(tabNames.length - 1, Number(controller.info.ui?.lastTab || 0)))
     sampleText = String(controller.info.ui?.sampleText || sampleText)
     controller.previewText(previewSource)
   }
@@ -418,7 +502,6 @@ Panel {
       root.pendingVariant = ""; root.pendingSeen = false
     }
   }
-  onCurrentTabChanged: if (opened) controller.setConfig(".ui.lastTab", currentTab)
 
   KeyboardPanel {
     id: panelCard
@@ -461,6 +544,8 @@ Panel {
         if (event.key === Qt.Key_Left) root.currentTab = (root.currentTab + tabCount - 1) % tabCount
         else if (event.key === Qt.Key_Right) root.currentTab = (root.currentTab + 1) % tabCount
         else if (event.key >= Qt.Key_1 && event.key < Qt.Key_1 + tabCount) root.currentTab = event.key - Qt.Key_1
+        // Space is play/pause on the Overview, as it is in any player.
+        else if (event.key === Qt.Key_Space && root.currentTabName === "Overview" && controller.speaking) controller.togglePause()
         else return
         event.accepted = true
       }
@@ -520,6 +605,417 @@ Panel {
         FirstRunWizard {
           width: parent.width; visible: root.needsSetup; controller: controller; foreground: root.fg
           onSkipped: root.setupSkipped = true
+        }
+
+        // Overview ---------------------------------------------------------
+        // A teleprompter: the words being read are the largest thing on the
+        // panel, with transport and speed under them. When nothing is being
+        // read the same screen holds the sample text, so pressing Play turns
+        // what you typed into what you are hearing without anything moving.
+        Column {
+          width: parent.width; spacing: Style.space(10); visible: !root.needsSetup && root.currentTabName === "Overview" && !root.browsing
+          Rectangle {
+            id: prompterScreen
+            readonly property bool reading: root.playState !== "idle"
+            width: parent.width; height: Style.space(172); radius: Style.space(6); clip: true
+            color: Commons.Color.background; border.width: 1
+            // Bordered like a text field, since at rest it is one.
+            border.color: Style.controlBorder(sampleField.activeFocus, screenHover.hovered && !reading, root.fg, Commons.Color.accent)
+            HoverHandler { id: screenHover }
+
+            Flickable {
+              id: sampleFlick
+              anchors.fill: parent; anchors.margins: Style.space(10); anchors.bottomMargin: prompterFooter.height + Style.space(6)
+              visible: !prompterScreen.reading; clip: true
+              contentWidth: width; contentHeight: sampleField.implicitHeight
+              boundsBehavior: Flickable.StopAtBounds
+              TextArea.flickable: TextArea {
+                id: sampleField
+                textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; selectByMouse: true
+                padding: 0; background: null
+                text: root.sampleText; color: root.fg; placeholderText: "Type something to hear it"; placeholderTextColor: root.dim
+                font.family: root.ff; font.pixelSize: root.prompterPx
+                Accessible.name: "Sample text"
+                // Enter plays, as it would in a player; Shift+Enter is still a newline.
+                Keys.onReturnPressed: function(event) { if (event.modifiers & Qt.ShiftModifier) event.accepted = false; else root.playSample() }
+                Keys.onEnterPressed: function(event) { if (event.modifiers & Qt.ShiftModifier) event.accepted = false; else root.playSample() }
+                onTextChanged: {
+                  if (text.length > 4096) {
+                    var oldCursor = cursorPosition
+                    text = text.slice(0, 4096)
+                    cursorPosition = Math.min(oldCursor, text.length)
+                    return
+                  }
+                  root.sampleText = text
+                }
+                onEditingFinished: controller.setConfig(".ui.sampleText", text)
+              }
+            }
+
+            // Preparation has no words yet when it is capturing or recognising
+            // the screen; say what is happening rather than show an empty box.
+            Column {
+              anchors.centerIn: parent; anchors.verticalCenterOffset: -prompterFooter.height / 2
+              spacing: Style.space(4); visible: prompterScreen.reading && root.phrases.length === 0
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "󰔟"; color: root.dim; font.family: root.ff; font.pixelSize: root.prompterPx }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Getting the text ready…"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
+            }
+
+            ListView {
+              id: prompter
+              anchors.fill: parent; anchors.margins: Style.space(10); anchors.bottomMargin: prompterFooter.height + Style.space(12)
+              visible: prompterScreen.reading && root.phrases.length > 0
+              clip: true; interactive: false; spacing: Style.space(6)
+              model: root.phrases
+              currentIndex: root.phraseIndex
+              // The spoken phrase is held in the middle, so the one just read
+              // stays in view above it and the next one below.
+              readonly property real currentHeight: currentItem ? currentItem.height : 0
+              highlightRangeMode: ListView.StrictlyEnforceRange
+              preferredHighlightBegin: Math.max(0, (height - currentHeight) / 2)
+              preferredHighlightEnd: preferredHighlightBegin + currentHeight
+              highlightMoveDuration: 420; highlightMoveVelocity: -1
+              Accessible.role: Accessible.StaticText
+              Accessible.name: root.phrases.length ? root.phrases[root.phraseIndex].text : ""
+              delegate: Text {
+                required property var modelData
+                required property int index
+                readonly property int distance: Math.abs(index - root.phraseIndex)
+                width: ListView.view ? ListView.view.width : 0
+                textFormat: Text.PlainText; wrapMode: Text.WordWrap; text: modelData.text
+                color: distance === 0 ? root.fg : root.dim
+                opacity: distance === 0 ? (root.playState === "paused" ? 0.7 : 1) : distance === 1 ? 0.75 : 0.35
+                font.family: root.ff; font.pixelSize: distance === 0 ? root.prompterPx : Style.font.body
+                Behavior on opacity { NumberAnimation { duration: 240 } }
+              }
+            }
+            Rectangle {
+              anchors.top: prompter.top; anchors.left: prompter.left; anchors.right: prompter.right
+              height: Style.space(30); visible: prompter.visible
+              gradient: Gradient {
+                GradientStop { position: 0; color: prompterScreen.color }
+                GradientStop { position: 1; color: Qt.rgba(prompterScreen.color.r, prompterScreen.color.g, prompterScreen.color.b, 0) }
+              }
+            }
+            Rectangle {
+              anchors.bottom: prompter.bottom; anchors.left: prompter.left; anchors.right: prompter.right
+              height: Style.space(30); visible: prompter.visible
+              gradient: Gradient {
+                GradientStop { position: 0; color: Qt.rgba(prompterScreen.color.r, prompterScreen.color.g, prompterScreen.color.b, 0) }
+                GradientStop { position: 1; color: prompterScreen.color }
+              }
+            }
+
+            Column {
+              id: prompterFooter
+              anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+              anchors.margins: Style.space(10); spacing: Style.space(5)
+              // Progress, once there is audio to measure. Preparing slides an
+              // unmeasured segment instead of claiming a percentage.
+              Rectangle {
+                id: progressTrack
+                width: parent.width; height: 3; radius: 1.5; visible: prompterScreen.reading
+                color: Style.selectedFillFor(root.fg, Commons.Color.accent); clip: true
+                Rectangle {
+                  visible: root.playState !== "preparing"
+                  height: parent.height; radius: parent.radius
+                  width: parent.width * root.npProgress
+                  color: root.playState === "paused" ? root.dim : Commons.Color.accent
+                  Behavior on width { NumberAnimation { duration: 260 } }
+                }
+                Rectangle {
+                  id: preparingSweep
+                  visible: root.playState === "preparing"
+                  height: parent.height; radius: parent.radius; width: parent.width * 0.25
+                  color: Commons.Color.accent
+                  NumberAnimation on x {
+                    running: preparingSweep.visible && root.opened
+                    from: -progressTrack.width * 0.25; to: progressTrack.width
+                    duration: 1300; loops: Animation.Infinite; easing.type: Easing.InOutQuad
+                  }
+                }
+              }
+              Item {
+                width: parent.width; height: footerLeft.implicitHeight
+                Text {
+                  id: footerLeft
+                  textFormat: Text.PlainText
+                  text: !prompterScreen.reading ? (root.voiceMissing ? (root.voiceFetchable ? "Download a voice to hear this" : "Install a voice in Providers to hear this") : "Sample · Enter to play")
+                        : root.npDuration > 0 ? root.clockText(root.npElapsed) : ""
+                  color: root.voiceMissing && !prompterScreen.reading ? Commons.Color.accent : root.dim
+                  font.family: root.ff; font.pixelSize: Style.font.caption
+                }
+                Text {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  visible: prompterScreen.reading
+                  textFormat: Text.PlainText
+                  text: root.playState === "paused" ? "Paused"
+                        : root.playState === "preparing" ? "Preparing"
+                        : root.phrases.length > 1 ? (root.phraseIndex + 1) + " of " + root.phrases.length : "Reading"
+                  color: root.playState === "paused" ? Commons.Color.accent : root.dim
+                  font.family: root.ff; font.pixelSize: Style.font.caption
+                }
+                Text {
+                  anchors.right: parent.right
+                  textFormat: Text.PlainText
+                  text: !prompterScreen.reading ? "Runs locally"
+                        : root.npDuration > 0 ? "−" + root.clockText(root.npDuration - root.npElapsed) : ""
+                  color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                }
+              }
+            }
+          }
+
+          // Transport on the left, speed on the right. The speed control is
+          // the same one whether or not anything is playing: idle, it sets
+          // the next reading; while reading it retunes the current one if
+          // the provider can, and says when it cannot.
+          Item {
+            width: parent.width; height: Math.max(transport.implicitHeight, speedReadout.implicitHeight)
+            Row {
+              id: transport
+              anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(6)
+              Button {
+                id: playButton
+                width: root.playState === "idle" ? transport.deckWidth : height
+                iconText: root.playState === "speaking" || root.playState === "preparing" ? "󰏤" : "󰐊"
+                text: root.playState === "idle" ? "Play" : ""
+                Accessible.name: root.playState === "idle" ? "Play sample" : controller.paused ? "Resume" : "Pause"
+                tooltipText: root.playState === "idle" ? "" : !controller.nowPlaying.canPause ? "This provider cannot pause" : controller.paused ? "Resume" : "Pause"
+                bordered: true; focusable: true
+                foreground: root.playState === "idle" ? Commons.Color.accent : root.fg
+                enabled: root.playState === "idle" ? !root.voiceMissing && root.sampleText.trim() !== ""
+                         : root.playState !== "preparing" && controller.nowPlaying.canPause === true
+                opacity: enabled ? 1 : 0.45
+                onClicked: root.playState === "idle" ? root.playSample() : controller.togglePause()
+              }
+              Button {
+                id: stopButton
+                width: height; visible: root.playState !== "idle"
+                iconText: "󰓛"; tooltipText: "Stop"; Accessible.name: "Stop"
+                bordered: true; focusable: true; foreground: Commons.Color.urgent; accent: Commons.Color.urgent
+                onClicked: controller.stop()
+              }
+              readonly property real deckWidth: playButton.height * 2 + spacing
+            }
+            Row {
+              anchors.left: transport.right; anchors.leftMargin: Style.space(12)
+              anchors.right: speedReadout.left; anchors.rightMargin: Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(6); visible: root.rateSupported
+              Button { id: slower; width: Style.space(28); text: "−"; bordered: true; focusable: true; Accessible.name: "Slower"; onClicked: root.applyRate(root.rateValue - .1) }
+              // The knob tracks the raw pointer while the label shows the snapped
+              // value, so on release it drifts to the step and eases there once
+              // the config round-trip returns. Snapping liveValue as we go keeps
+              // knob, label and stored value identical at every instant.
+              PanelSlider {
+                id: speedSlider
+                width: parent.width - slower.width - faster.width - parent.spacing * 2; bar: root.bar
+                anchors.verticalCenter: parent.verticalCenter
+                minimum: root.rateMinimum; maximum: root.rateMaximum; step: .05
+                value: root.rateValue
+                function snap(v) { return Math.round(v * 20) / 20 }
+                // Track the drag in the override too: the label reads it, and it
+                // makes `value` already correct when the drag ends.
+                onMoved: function(v) { var s = speedSlider.snap(v); root.rateOverride = s; speedSlider.liveValue = s }
+                onReleased: function(v) { root.applyRate(v) }   // value is correct before liveValue resets to it
+              }
+              Button { id: faster; width: Style.space(28); text: "+"; bordered: true; focusable: true; Accessible.name: "Faster"; onClicked: root.applyRate(root.rateValue + .1) }
+            }
+            Column {
+              id: speedReadout
+              anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+              width: root.rateSupported ? Style.space(70) : parent.width - transport.width - Style.space(12)
+              Text {
+                width: parent.width; horizontalAlignment: Text.AlignRight
+                text: root.rateSupported ? root.rateValue.toFixed(2) + "×" : "Speed fixed by provider"
+                color: root.rateSupported ? root.fg : root.dim; font.family: root.ff
+                font.pixelSize: root.rateSupported ? Style.font.body : Style.font.caption
+              }
+              // Says whether the number above is what you are hearing.
+              Text {
+                width: parent.width; horizontalAlignment: Text.AlignRight
+                visible: root.rateSupported && (root.playState === "speaking" || root.playState === "paused")
+                text: controller.nowPlaying.canLiveRate ? "applies now" : "next reading"
+                color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+              }
+            }
+          }
+
+          // Everything about the voice, folded into one line until asked for.
+          Rectangle {
+            id: voiceCard
+            width: parent.width; height: voiceCardColumn.implicitHeight + Style.space(14); radius: Style.space(6)
+            color: root.voiceOpen ? root.tint(0.06) : "transparent"
+            border.width: 1; border.color: Style.controlBorder(voiceToggle.activeFocus, voiceHover.hovered, root.fg, Commons.Color.accent)
+            HoverHandler { id: voiceHover }
+            Column {
+              id: voiceCardColumn
+              anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+              anchors.margins: Style.space(10); anchors.topMargin: Style.space(7); spacing: Style.space(10)
+              Item {
+                id: voiceToggle
+                width: parent.width; height: Math.max(voiceGlyph.implicitHeight, voiceChevron.implicitHeight)
+                activeFocusOnTab: true
+                Accessible.role: Accessible.Button
+                Accessible.name: "Voice settings, " + voiceSummary.text
+                Accessible.expanded: root.voiceOpen
+                Accessible.onPressAction: root.voiceRowActivate()
+                Keys.onSpacePressed: root.voiceRowActivate()
+                Keys.onReturnPressed: root.voiceRowActivate()
+                Keys.onEnterPressed: root.voiceRowActivate()
+                Text { id: voiceGlyph; anchors.verticalCenter: parent.verticalCenter; text: "󰗋"; color: root.voiceMissing ? Commons.Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
+                Text {
+                  id: voiceSummary
+                  anchors.left: voiceGlyph.right; anchors.leftMargin: Style.space(8)
+                  anchors.right: voiceAction.visible ? voiceAction.left : voiceChevron.left; anchors.rightMargin: Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  elide: Text.ElideRight; textFormat: Text.PlainText
+                  // What you hear, how fast and how much, in one line.
+                  text: root.voiceMissing ? "No voice installed"
+                        : ["Voice", root.activeVoiceLabel(),
+                           root.rateSupported ? root.rateValue.toFixed(2) + "×" : "",
+                           controller.info.maxChars > 0 ? "≤" + controller.info.maxChars + " chars" : "unlimited"]
+                          .filter(function(part) { return part !== "" }).join(" · ")
+                  color: root.voiceMissing ? Commons.Color.accent : root.fg
+                  font.family: root.ff; font.pixelSize: Style.font.body
+                }
+                InlineAction {
+                  id: voiceAction
+                  anchors.right: voiceChevron.visible ? voiceChevron.left : parent.right; anchors.rightMargin: voiceChevron.visible ? Style.space(10) : 0; anchors.verticalCenter: parent.verticalCenter
+                  visible: root.voiceMissing
+                  text: root.voiceFetchable ? "󰇚 Download" : "Open Providers 󰅂"; color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
+                  onTriggered: root.voiceRowActivate()
+                }
+                Text { id: voiceChevron; visible: !root.voiceMissing; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: root.voiceOpen ? "󰅃" : "󰅀"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
+                MouseArea { anchors.fill: parent; z: -1; cursorShape: Qt.PointingHandCursor; onClicked: root.voiceRowActivate() }
+              }
+              Dropdown { id: voiceDropdown; visible: root.voiceOpen; width: parent.width; showLabel: false; foreground: root.fg; options: root.voiceOptions.length ? root.voiceOptions : [{ label: "No voice installed", value: "" }]; value: controller.info.voice || ""; onValueChanged: if (value && value !== controller.info.voice && value !== "No voice installed") controller.setConfig(controller.info.voicePath || ".piper.voice", value) }
+              Button { width: parent.width; visible: root.voiceOpen && root.voicesDownloadable; text: controller.info.voices?.length ? "Browse all voices" : "Download a voice"; iconText: "󰇚"; bordered: true; focusable: true; foreground: controller.info.voices?.length ? root.fg : Commons.Color.accent; onClicked: root.openCatalogue() }
+              Item {
+                width: parent.width; height: limitHeader.implicitHeight; visible: root.voiceOpen
+                PanelSectionHeader { id: limitHeader; text: "Length limit"; foreground: root.fg }
+                Text { anchors.right: parent.right; text: controller.info.maxChars > 0 ? "~" + Math.max(1, Math.round(controller.info.maxChars / 900)) + " min" : "unlimited"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+              }
+              Row { width: parent.width; spacing: 8; visible: root.voiceOpen
+                Button { width: 48; text: "−500"; bordered: true; focusable: true; onClicked: controller.setConfig(".maxChars", Math.max(0, Number(controller.info.maxChars)-500)) }
+                TextField {
+                  id: maxCharsField; width: parent.width - 112
+                  text: String(controller.info.maxChars || 0); foreground: root.fg
+                  maximumLength: 7
+                  inputMethodHints: Qt.ImhDigitsOnly
+                  validator: IntValidator { bottom: 0; top: 1048576 }
+                  onEditingFinished: controller.setConfig(".maxChars", Math.max(0, Math.min(1048576, Number(text) || 0)))
+                }
+                Button { width: 48; text: "+500"; bordered: true; focusable: true; onClicked: controller.setConfig(".maxChars", Math.min(1048576, Number(controller.info.maxChars||0)+500)) }
+              }
+              Text {
+                width: parent.width
+                visible: root.voiceOpen && root.activeProvider && Number(root.activeProvider.maxBytes || 0) > 0
+                wrapMode: Text.WordWrap
+                textFormat: Text.PlainText
+                text: root.activeProvider
+                      ? (root.activeProvider.title || root.activeProvider.name) + " allows "
+                        + root.activeProvider.maxBytes
+                        + " UTF-8 bytes per request. Non-Latin characters can use more than one byte."
+                      : ""
+                color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+              }
+            }
+          }
+        }
+
+        Column {
+          width: parent.width; spacing: 8; visible: !root.needsSetup && root.currentTabName === "Overview" && root.browsing
+          Item {
+            width: parent.width; height: browseHeader.implicitHeight
+            PanelSectionHeader { id: browseHeader; text: root.installedCount + " installed · " + ((controller.catalogue || []).length - root.installedCount) + " available"; foreground: root.fg }
+            InlineAction { anchors.right: parent.right; text: "Done"; color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption; onTriggered: root.browsing = false }
+          }
+          TextField { id: voiceFilterField; width: parent.width; placeholderText: "Search voices"; text: root.voiceFilter; foreground: root.fg; onTextChanged: root.voiceFilter = text }
+          Text {
+            width: parent.width; visible: controller.catalogueLoading
+            text: "Loading and validating the voice catalogue…"
+            color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+          }
+
+          Row {
+            width: parent.width; spacing: Style.space(12)
+            Text { text: "Sort"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                   anchors.verticalCenter: parent.verticalCenter }
+            Repeater {
+              model: root.voiceSorts
+              delegate: InlineAction {
+                required property var modelData
+                text: modelData.label
+                color: root.voiceSort === modelData.key ? Commons.Color.accent : root.dim
+                font.family: root.ff; font.pixelSize: Style.font.caption
+                anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+                Accessible.role: Accessible.RadioButton
+                Accessible.checked: root.voiceSort === modelData.key
+                onTriggered: root.voiceSort = modelData.key
+              }
+            }
+          }
+
+          ListView {
+            width: parent.width; height: Style.space(240); clip: true; model: root.filteredVoices; spacing: 2
+            section.property: "group"
+            section.criteria: ViewSection.FullString
+            section.delegate: Item {
+              required property string section
+              width: ListView.view ? ListView.view.width : 0
+              height: sectionLabel.implicitHeight + Style.space(10)
+              Text {
+                id: sectionLabel
+                anchors.left: parent.left; anchors.leftMargin: Style.space(8)
+                anchors.bottom: parent.bottom
+                text: parent.section === "Installed"
+                      ? "Installed — click to use, Remove to delete"
+                      : parent.section === "Needs repair"
+                        ? "Active voice is incomplete — repair to use it"
+                        : "Available to download"
+                color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+              }
+            }
+            delegate: Rectangle {
+              required property var modelData
+              readonly property bool busy: (controller.downloadStarting && controller.pendingDownloadVoice === modelData.key)
+                                            || ((controller.download.status === "starting" || controller.download.status === "downloading") && controller.download.voice === modelData.key)
+              function activateRow() { if (modelData.installed && modelData.key !== controller.info.voice) controller.useVoice(modelData.key) }
+              function activateAction() { if (busy) controller.cancelDownload(); else if (modelData.installed) root.confirmVoiceRemove = modelData.key; else controller.downloadVoice(modelData.key) }
+              width: ListView.view.width; height: 42; radius: 5; color: modelData.installed ? root.tint(.07) : "transparent"
+              activeFocusOnTab: modelData.installed && modelData.key !== controller.info.voice
+              border.width: activeFocus ? 1 : 0; border.color: Commons.Color.accent
+              Accessible.role: Accessible.Button
+              Accessible.name: "Use " + root.voiceLabel(modelData.key)
+              Accessible.onPressAction: activateRow()
+              Keys.onSpacePressed: activateRow()
+              Keys.onReturnPressed: activateRow()
+              Keys.onEnterPressed: activateRow()
+              Text { anchors.left: parent.left; anchors.right: parent.right; anchors.rightMargin: 112; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; textFormat: Text.PlainText; text: root.titleCase(String(parent.modelData.name).replace(/_/g, " ")) + " · " + parent.modelData.lang + " · " + parent.modelData.quality; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption }
+              InlineAction {
+                id: voiceAction; z: 2; anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                text: parent.modelData.installed ? (parent.modelData.key === controller.info.voice ? "󰄬 Active" : "Remove") : (parent.busy ? (controller.downloadCancellable ? controller.download.percent + "% · Cancel" : "Starting…") : (parent.modelData.key === controller.info.voice ? "Repair · " : "󰇚 ") + parent.modelData.sizeMB + " MB")
+                color: parent.modelData.installed || parent.busy ? Commons.Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                enabled: (!parent.modelData.installed || parent.modelData.key !== controller.info.voice)
+                         && (!parent.busy || controller.downloadCancellable)
+                onTriggered: parent.activateAction()
+              }
+              MouseArea { anchors.fill: parent; z: 1; enabled: parent.modelData.installed && parent.modelData.key !== controller.info.voice; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
+            }
+          }
+          Rectangle {
+            width: parent.width; height: voiceRemoveRow.implicitHeight + 16; radius: 6
+            visible: root.confirmVoiceRemove !== ""; color: root.tint(0.08); border.width: 1; border.color: Commons.Color.popups.border
+            Row {
+              id: voiceRemoveRow; anchors.fill: parent; anchors.margins: 8; spacing: 8
+              Text { width: parent.width - cancelVoice.width - removeVoice.width - 24; elide: Text.ElideMiddle; textFormat: Text.PlainText; text: "Remove " + root.voiceLabel(root.confirmVoiceRemove) + "?" + (root.removeSizeMB > 0 ? "  Frees " + root.removeSizeMB + " MB." : ""); color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption }
+              Button { id: cancelVoice; text: "Cancel"; bordered: true; focusable: true; onClicked: root.confirmVoiceRemove = "" }
+              Button { id: removeVoice; text: "Remove"; bordered: true; focusable: true; foreground: Commons.Color.urgent; onClicked: { controller.removeVoice(root.confirmVoiceRemove); root.confirmVoiceRemove = "" } }
+            }
+          }
+          Text { text: "Storage: ~/.local/share/omarchy-tts-local/voices/piper"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
         }
 
         // Providers: speech ------------------------------------------------
@@ -873,164 +1369,6 @@ Panel {
           }
         }
 
-        // Voice ------------------------------------------------------------
-        Column {
-          width: parent.width; spacing: Style.space(10); visible: !root.needsSetup && root.currentTabName === "Voice" && !root.browsing
-          PanelSectionHeader { text: "Voice"; foreground: root.fg }
-          Dropdown { id: voiceDropdown; width: parent.width; showLabel: false; foreground: root.fg; options: root.voiceOptions.length ? root.voiceOptions : [{ label: "No voice installed", value: "" }]; value: controller.info.voice || ""; onValueChanged: if (value && value !== controller.info.voice && value !== "No voice installed") controller.setConfig(controller.info.voicePath || ".piper.voice", value) }
-          Button { width: parent.width; text: controller.info.voices?.length ? "Browse all voices" : "Download a voice"; iconText: "󰇚"; bordered: true; focusable: true; foreground: controller.info.voices?.length ? root.fg : Commons.Color.accent; visible: !root.activeProvider || root.activeProvider.voices === "downloadable"; onClicked: { root.browsing = true; root.voiceFilter = ""; controller.loadCatalogue() } }
-          Item {
-            width: parent.width; height: speedHeader.implicitHeight
-            PanelSectionHeader { id: speedHeader; text: "Speed"; foreground: root.fg }
-            Text { anchors.right: parent.right; text: root.rateSupported ? root.rateValue.toFixed(2) + "×" : "Fixed by provider"; color: root.rateSupported ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-          }
-          Row { width: parent.width; spacing: 8; visible: root.rateSupported
-            Button { width: 32; text: "−"; bordered: true; focusable: true; onClicked: { var s = Math.max(root.rateMinimum, Math.round((root.rateValue - .1) * 20) / 20); root.rateOverride = s; controller.setConfig(".rate", s.toFixed(2)) } }
-            // The knob tracks the raw pointer while the label shows the snapped
-            // value, so on release it drifts to the step and eases there once
-            // the config round-trip returns. Snapping liveValue as we go keeps
-            // knob, label and stored value identical at every instant.
-            PanelSlider {
-              id: speedSlider
-              width: parent.width - 80; bar: root.bar
-              minimum: root.rateMinimum; maximum: root.rateMaximum; step: .05
-              value: root.rateValue
-              function snap(v) { return Math.round(v * 20) / 20 }
-              // Track the drag in the override too: the label reads it, and it
-              // makes `value` already correct when the drag ends.
-              onMoved: function(v) { var s = speedSlider.snap(v); root.rateOverride = s; speedSlider.liveValue = s }
-              onReleased: function(v) {
-                var s = speedSlider.snap(v)
-                root.rateOverride = s          // value is correct before liveValue resets to it
-                controller.setConfig(".rate", s.toFixed(2))
-              }
-            }
-            Button { width: 32; text: "+"; bordered: true; focusable: true; onClicked: { var s = Math.min(root.rateMaximum, Math.round((root.rateValue + .1) * 20) / 20); root.rateOverride = s; controller.setConfig(".rate", s.toFixed(2)) } }
-          }
-          Text { width: parent.width; visible: !root.rateSupported; text: "This provider chooses its own speaking pace."; wrapMode: Text.WordWrap; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-          Text {
-            width: parent.width
-            visible: root.activeProvider && Number(root.activeProvider.maxBytes || 0) > 0
-            wrapMode: Text.WordWrap
-            textFormat: Text.PlainText
-            text: root.activeProvider
-                  ? (root.activeProvider.title || root.activeProvider.name) + " allows "
-                    + root.activeProvider.maxBytes
-                    + " UTF-8 bytes per request. Non-Latin characters can use more than one byte."
-                  : ""
-            color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
-          }
-          Item {
-            width: parent.width; height: limitHeader.implicitHeight
-            PanelSectionHeader { id: limitHeader; text: "Length limit"; foreground: root.fg }
-            Text { anchors.right: parent.right; text: controller.info.maxChars > 0 ? "~" + Math.max(1, Math.round(controller.info.maxChars / 900)) + " min" : "unlimited"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-          }
-          Row { width: parent.width; spacing: 8
-            Button { width: 48; text: "−500"; bordered: true; focusable: true; onClicked: controller.setConfig(".maxChars", Math.max(0, Number(controller.info.maxChars)-500)) }
-            TextField {
-              id: maxCharsField; width: parent.width - 112
-              text: String(controller.info.maxChars || 0); foreground: root.fg
-              maximumLength: 7
-              inputMethodHints: Qt.ImhDigitsOnly
-              validator: IntValidator { bottom: 0; top: 1048576 }
-              onEditingFinished: controller.setConfig(".maxChars", Math.max(0, Math.min(1048576, Number(text) || 0)))
-            }
-            Button { width: 48; text: "+500"; bordered: true; focusable: true; onClicked: controller.setConfig(".maxChars", Math.min(1048576, Number(controller.info.maxChars||0)+500)) }
-          }
-        }
-        Column {
-          width: parent.width; spacing: 8; visible: !root.needsSetup && root.currentTabName === "Voice" && root.browsing
-          Item {
-            width: parent.width; height: browseHeader.implicitHeight
-            PanelSectionHeader { id: browseHeader; text: root.installedCount + " installed · " + ((controller.catalogue || []).length - root.installedCount) + " available"; foreground: root.fg }
-            InlineAction { anchors.right: parent.right; text: "Done"; color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption; onTriggered: root.browsing = false }
-          }
-          TextField { id: voiceFilterField; width: parent.width; placeholderText: "Search voices"; text: root.voiceFilter; foreground: root.fg; onTextChanged: root.voiceFilter = text }
-          Text {
-            width: parent.width; visible: controller.catalogueLoading
-            text: "Loading and validating the voice catalogue…"
-            color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
-          }
-
-          Row {
-            width: parent.width; spacing: Style.space(12)
-            Text { text: "Sort"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
-                   anchors.verticalCenter: parent.verticalCenter }
-            Repeater {
-              model: root.voiceSorts
-              delegate: InlineAction {
-                required property var modelData
-                text: modelData.label
-                color: root.voiceSort === modelData.key ? Commons.Color.accent : root.dim
-                font.family: root.ff; font.pixelSize: Style.font.caption
-                anchors.verticalCenter: parent ? parent.verticalCenter : undefined
-                Accessible.role: Accessible.RadioButton
-                Accessible.checked: root.voiceSort === modelData.key
-                onTriggered: root.voiceSort = modelData.key
-              }
-            }
-          }
-
-          ListView {
-            width: parent.width; height: Style.space(240); clip: true; model: root.filteredVoices; spacing: 2
-            section.property: "group"
-            section.criteria: ViewSection.FullString
-            section.delegate: Item {
-              required property string section
-              width: ListView.view ? ListView.view.width : 0
-              height: sectionLabel.implicitHeight + Style.space(10)
-              Text {
-                id: sectionLabel
-                anchors.left: parent.left; anchors.leftMargin: Style.space(8)
-                anchors.bottom: parent.bottom
-                text: parent.section === "Installed"
-                      ? "Installed — click to use, Remove to delete"
-                      : parent.section === "Needs repair"
-                        ? "Active voice is incomplete — repair to use it"
-                        : "Available to download"
-                color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
-              }
-            }
-            delegate: Rectangle {
-              required property var modelData
-              readonly property bool busy: (controller.downloadStarting && controller.pendingDownloadVoice === modelData.key)
-                                            || ((controller.download.status === "starting" || controller.download.status === "downloading") && controller.download.voice === modelData.key)
-              function activateRow() { if (modelData.installed && modelData.key !== controller.info.voice) controller.useVoice(modelData.key) }
-              function activateAction() { if (busy) controller.cancelDownload(); else if (modelData.installed) root.confirmVoiceRemove = modelData.key; else controller.downloadVoice(modelData.key) }
-              width: ListView.view.width; height: 42; radius: 5; color: modelData.installed ? root.tint(.07) : "transparent"
-              activeFocusOnTab: modelData.installed && modelData.key !== controller.info.voice
-              border.width: activeFocus ? 1 : 0; border.color: Commons.Color.accent
-              Accessible.role: Accessible.Button
-              Accessible.name: "Use " + root.voiceLabel(modelData.key)
-              Accessible.onPressAction: activateRow()
-              Keys.onSpacePressed: activateRow()
-              Keys.onReturnPressed: activateRow()
-              Keys.onEnterPressed: activateRow()
-              Text { anchors.left: parent.left; anchors.right: parent.right; anchors.rightMargin: 112; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; textFormat: Text.PlainText; text: root.titleCase(String(parent.modelData.name).replace(/_/g, " ")) + " · " + parent.modelData.lang + " · " + parent.modelData.quality; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption }
-              InlineAction {
-                id: voiceAction; z: 2; anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
-                text: parent.modelData.installed ? (parent.modelData.key === controller.info.voice ? "󰄬 Active" : "Remove") : (parent.busy ? (controller.downloadCancellable ? controller.download.percent + "% · Cancel" : "Starting…") : (parent.modelData.key === controller.info.voice ? "Repair · " : "󰇚 ") + parent.modelData.sizeMB + " MB")
-                color: parent.modelData.installed || parent.busy ? Commons.Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
-                enabled: (!parent.modelData.installed || parent.modelData.key !== controller.info.voice)
-                         && (!parent.busy || controller.downloadCancellable)
-                onTriggered: parent.activateAction()
-              }
-              MouseArea { anchors.fill: parent; z: 1; enabled: parent.modelData.installed && parent.modelData.key !== controller.info.voice; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
-            }
-          }
-          Rectangle {
-            width: parent.width; height: voiceRemoveRow.implicitHeight + 16; radius: 6
-            visible: root.confirmVoiceRemove !== ""; color: root.tint(0.08); border.width: 1; border.color: Commons.Color.popups.border
-            Row {
-              id: voiceRemoveRow; anchors.fill: parent; anchors.margins: 8; spacing: 8
-              Text { width: parent.width - cancelVoice.width - removeVoice.width - 24; elide: Text.ElideMiddle; textFormat: Text.PlainText; text: "Remove " + root.voiceLabel(root.confirmVoiceRemove) + "?" + (root.removeSizeMB > 0 ? "  Frees " + root.removeSizeMB + " MB." : ""); color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption }
-              Button { id: cancelVoice; text: "Cancel"; bordered: true; focusable: true; onClicked: root.confirmVoiceRemove = "" }
-              Button { id: removeVoice; text: "Remove"; bordered: true; focusable: true; foreground: Commons.Color.urgent; onClicked: { controller.removeVoice(root.confirmVoiceRemove); root.confirmVoiceRemove = "" } }
-            }
-          }
-          Text { text: "Storage: ~/.local/share/omarchy-tts-local/voices/piper"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-        }
-
         // Text -------------------------------------------------------------
         Column {
           width: parent.width; spacing: 8; visible: !root.needsSetup && root.currentTabName === "Text"
@@ -1070,8 +1408,8 @@ Panel {
         }
 
         // Languages --------------------------------------------------------
-        // Engine and languages are separate tabs for the same reason Providers
-        // and Voice are: one is a choice made once, the other is browsed.
+        // The engine is chosen once on Providers; languages are browsed, so
+        // they keep a tab of their own.
         Column {
           width: parent.width; spacing: 10; visible: !root.needsSetup && root.currentTabName === "Languages"
           Item {
@@ -1227,21 +1565,39 @@ Panel {
           }
         }
 
-        PanelSeparator { width: parent.width; foreground: root.fg }
-        Column {
-          width: parent.width; spacing: 8; visible: !root.needsSetup
-          Item {
-            width: parent.width; height: testHeader.implicitHeight
-            PanelSectionHeader { id: testHeader; text: "Test"; foreground: root.fg }
-            Text { anchors.right: parent.right; text: "Runs locally"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+        // Elsewhere in the panel, a line keeps what is being read in reach:
+        // the phrase, pause and stop, and a way back to the Overview.
+        PanelSeparator { width: parent.width; foreground: root.fg; visible: nowPlayingStrip.visible || errorLine.visible }
+        Item {
+          id: nowPlayingStrip
+          width: parent.width; height: Math.max(stripPause.implicitHeight, stripPhrase.implicitHeight)
+          visible: !root.needsSetup && root.currentTab !== 0 && controller.speaking
+          InlineAction {
+            id: stripPause; anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+            text: controller.paused ? "󰐊" : "󰏤"; Accessible.name: controller.paused ? "Resume" : "Pause"
+            enabled: root.playState !== "preparing" && controller.nowPlaying.canPause === true
+            color: enabled ? Commons.Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.body
+            onTriggered: controller.togglePause()
           }
-          Row { width: parent.width; spacing: 8
-            TextField { id: sampleField; width: parent.width - testButton.width - 8; text: root.sampleText; maximumLength: 4096; foreground: root.fg; selectByMouse: true; onTextChanged: root.sampleText = text; onEditingFinished: controller.setConfig(".ui.sampleText", text) }
-            Button { id: testButton; width: 96; text: controller.speaking ? "Stop" : "Speak"; iconText: controller.speaking ? "󰓛" : "󰐊"; bordered: true; focusable: true; foreground: controller.speaking ? Commons.Color.urgent : root.fg; accent: controller.speaking ? Commons.Color.urgent : Commons.Color.accent; onClicked: controller.speaking ? controller.stop() : controller.speak(root.sampleText) }
+          InlineAction {
+            id: stripPhrase
+            anchors.left: stripPause.right; anchors.leftMargin: Style.space(10)
+            anchors.right: stripStop.left; anchors.rightMargin: Style.space(10); anchors.verticalCenter: parent.verticalCenter
+            elide: Text.ElideRight
+            text: root.playState === "preparing" || !root.phrases.length ? "Getting the text ready…"
+                  : root.phrases[root.phraseIndex].text
+            Accessible.name: "Show what is being read"
+            color: hovered || activeFocus ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+            onTriggered: root.currentTab = 0
           }
-          Text { width: parent.width; elide: Text.ElideRight; textFormat: Text.PlainText; text: (controller.speaking ? "● Active · " : "") + ((root.activeProvider ? (root.activeProvider.title || root.activeProvider.name) : controller.info.provider) || "") + (root.activeProvider && root.activeProvider.device ? " · " + root.activeProvider.device.toUpperCase() : "") + (controller.info.voice ? " · " + root.activeVoiceLabel() : "") + (root.rateSupported ? " · " + root.rateValue.toFixed(2) + "×" : "") + (controller.info.maxChars > 0 ? " · ≤" + controller.info.maxChars + " chars" : ""); color: controller.speaking ? Commons.Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-          Text { width: parent.width; visible: controller.error !== ""; textFormat: Text.PlainText; text: controller.error; wrapMode: Text.WordWrap; color: Commons.Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
+          InlineAction {
+            id: stripStop; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            text: "󰓛"; Accessible.name: "Stop"
+            color: Commons.Color.urgent; font.family: root.ff; font.pixelSize: Style.font.body
+            onTriggered: controller.stop()
+          }
         }
+        Text { id: errorLine; width: parent.width; visible: controller.error !== ""; textFormat: Text.PlainText; text: controller.error; wrapMode: Text.WordWrap; color: Commons.Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
       }
       }
     }

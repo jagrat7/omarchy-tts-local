@@ -72,14 +72,13 @@ class QmlContractTests(unittest.TestCase):
         self.assertIn("if (root.descendantControlActive) return", self.panel)
 
     def test_provider_and_screen_engines_share_one_providers_tab(self):
-        self.assertIn('readonly property var tabNames: ["Providers", ', self.panel)
+        self.assertIn('readonly property var tabNames: ["Overview", "Providers", ', self.panel)
         self.assertNotIn('"Screen"', self.panel)
         # Sections and shortcuts follow the list, so a later tab change cannot
         # leave a stale index or a dead number key behind.
         self.assertIsNone(re.search(r"currentTab === \d", self.panel))
         self.assertEqual(self.panel.count('root.currentTabName === "Providers"'), 2)
         self.assertIn("event.key < Qt.Key_1 + tabCount", self.panel)
-        self.assertIn("Math.min(tabNames.length - 1,", self.panel)
         # The two groups share one setup progress line.
         self.assertEqual(self.panel.count("controller.setupJob.message"), 1)
 
@@ -92,7 +91,7 @@ class QmlContractTests(unittest.TestCase):
 
     def test_provider_actions_are_declared_by_backend_metadata(self):
         start = self.panel.index(
-            "visible: root.activeProvider && Number(root.activeProvider.maxBytes || 0) > 0"
+            "root.activeProvider && Number(root.activeProvider.maxBytes || 0) > 0"
         )
         caption = self.panel[start:self.panel.index("color: root.dim", start)]
         self.assertIn("text: root.activeProvider", caption)
@@ -144,8 +143,10 @@ class QmlContractTests(unittest.TestCase):
         opened = self.panel[self.panel.index("onOpenedChanged:"):
                             self.panel.index("function restoreFromInfo")]
         self.assertNotIn("loadCatalogue", opened)
-        self.assertIn("onClicked: { root.browsing = true; root.voiceFilter = \"\"; controller.loadCatalogue() }",
+        # Only an explicit Browse/Download opens (and so fetches) the catalogue.
+        self.assertIn("function openCatalogue() { root.browsing = true; root.voiceFilter = \"\"; controller.loadCatalogue() }",
                       self.panel)
+        self.assertEqual(self.panel.count("controller.loadCatalogue()"), 1)
 
     def test_config_refresh_waits_for_all_pending_writes(self):
         refresh = self.controller[self.controller.index("function refresh()"):
@@ -226,6 +227,48 @@ class QmlContractTests(unittest.TestCase):
 
 
 
+    def test_overview_is_the_first_tab_and_navigation_follows_the_tab_list(self):
+        self.assertIn('readonly property var tabNames: ["Overview", "Providers", "Text", "Languages", "Keys"]',
+                      self.panel)
+        self.assertIn("var tabCount = root.tabNames.length", self.panel)
+        self.assertNotRegex(self.panel, r"%\s*6\b")
+        self.assertNotIn("Qt.Key_6", self.panel)
+        opened = self.panel[self.panel.index("onOpenedChanged:"):self.panel.index("function restoreFromInfo")]
+        self.assertIn("currentTab = 0", opened)
+
+    def test_teleprompter_hosts_the_sample_and_shows_plain_text(self):
+        self.assertNotIn("id: testButton", self.panel)
+        self.assertEqual(self.panel.count("id: sampleField"), 1)
+        overview = self.panel[self.panel.index("// Overview ----"):self.panel.index("// Providers: speech ----")]
+        self.assertIn("id: sampleField", overview)
+        self.assertIn("id: prompter", overview)
+        phrase = overview[overview.index("delegate: Text {"):overview.index("Behavior on opacity")]
+        self.assertIn("textFormat: Text.PlainText", phrase)
+        # The sample cannot be played with no voice, whoever supplies voices.
+        self.assertIn("readonly property bool voiceMissing: controller.infoLoaded && root.voiceOptions.length === 0",
+                      self.panel)
+        self.assertIn("if (!root.voiceMissing", self.panel)
+        # With no voice the summary row stays one line and points at Providers
+        # (or the catalogue when the engine downloads voices); it never expands.
+        self.assertIn('else if (root.voiceMissing) root.currentTab = root.tabNames.indexOf("Providers")', self.panel)
+        self.assertIn('onVoiceMissingChanged: if (root.voiceMissing) root.voiceOpen = false', self.panel)
+        self.assertIn('"Open Providers', self.panel)
+
+    def test_speed_goes_live_while_speaking_and_keeps_the_override(self):
+        apply = self.panel[self.panel.index("function applyRate"):self.panel.index("function clockText")]
+        self.assertIn("root.rateOverride = s", apply)
+        self.assertIn("controller.setLiveRate(s)", apply)
+        self.assertIn("Math.max(root.rateMinimum, Math.min(root.rateMaximum", apply)
+        self.assertIn('controller.nowPlaying.canLiveRate ? "applies now" : "next reading"', self.panel)
+
+    def test_transport_controls_use_the_controller_playback_api(self):
+        # The controller (and its tests) own the CLI flags and queueing; the
+        # Overview only calls it, and only polls while the panel is open.
+        self.assertIn("TtsController { id: controller; statusSource: root.hostWidget; panelOpen: root.opened }", self.panel)
+        self.assertIn("controller.togglePause()", self.panel)
+        self.assertIn("controller.setLiveRate(s)", self.panel)
+        for name in ("function togglePause()", "function setLiveRate(rate)", 'readonly property bool paused: status === "paused"'):
+            self.assertIn(name, self.controller)
 
 class ProcessExitContractTests(unittest.TestCase):
     def test_every_controller_exit_handler_ignores_killed_runs(self):

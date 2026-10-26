@@ -5,6 +5,14 @@ Versioning.
 
 ## Unreleased
 
+- Overview tab, the new default: a teleprompter for what is being read, with
+  the current sentence held in the middle, progress, play/pause, stop and a
+  speed slider that retunes the reading in progress (via `--live-rate`).
+  Idle, the same box holds the sample text and Enter plays it. The Voice tab
+  is folded into a one-line voice summary that expands in place; with no
+  voice installed it points to Providers, or to the catalogue when the
+  engine downloads voices. Space toggles pause. The panel always opens on
+  Overview.
 - Providers tab: the Provider and Screen tabs are one tab with Speech and
   Screen reading groups and a single setup progress line, leaving five tabs
   (number keys 1–5). Config schema 6 maps a saved `.ui.lastTab` onto the new
