@@ -16,29 +16,28 @@ you drag. Speech (Kokoro or Piper) and OCR (Tesseract or EasyOCR) run locally.
 
 ## Features
 
-- **Reads anything on screen.** The selection, the clipboard (text or a copied
-  image), the focused window, the whole monitor, or a region you drag, each on
-  its own hotkey.
-- **Natural voices, fully local.** Kokoro runs on the CPU by default, and an
-  NVIDIA GPU option is there if you want it. Piper is the lighter choice for
-  slower PCs, with 170+ voices in 50+ languages. Nothing you read leaves the
-  machine, and there are no accounts or API keys.
-- **A player for what's being read.** The Overview tab follows along sentence
-  by sentence, with pause and resume, a progress bar and a speed slider that
-  changes the reading in progress.
-- **Screen reading that copes with real screens.** Tesseract or EasyOCR, a
-  Languages tab for recognition languages, and a confidence floor that drops
-  misread words. It works over many fullscreen games.
-- **Text cleaned up before it's spoken.** Markdown, terminal colour codes and
-  box drawing are stripped, long URLs, paths and hashes are shortened, and
-  units and abbreviations are read out. Preferences previews the result as
-  you type.
-- **Everything set up from the panel.** Engines install, test and uninstall
-  from Providers, showing their size first, with progress and a cancel button.
-  Shortcuts are rebound on the Keys tab, which only edits its own block of
-  `bindings.lua` and rolls back if Hyprland reports an error.
-- **Scriptable.** The same `speak` command the panel uses can speak, pause,
-  resume and change speed from a terminal or your own bindings.
+- **A player:** follows the text sentence by sentence, with pause and live speed.
+
+  <img src="docs/screenshots/overview.png" width="380" alt="Overview reading a passage, sentence 3 of 4">
+
+- **Local voices:** Kokoro on the CPU by default, Piper for slower PCs and other languages. No accounts.
+
+  <img src="docs/screenshots/providers.png" width="380" alt="Providers: Kokoro ready on the CPU, Tesseract ready">
+
+- **Clean text:** strips markdown and terminal codes, shortens URLs and paths, with a live preview.
+
+  <img src="docs/screenshots/preferences.png" width="380" alt="Preferences: text rules, length limit and confidence floor">
+
+- **Screen reading:** Tesseract or EasyOCR, with recognition languages and a confidence floor.
+
+  <img src="docs/screenshots/languages.png" width="380" alt="Languages for Tesseract">
+
+- **Your own keys:** rebind every shortcut in the panel; changes roll back if Hyprland rejects them.
+
+  <img src="docs/screenshots/keys.png" width="380" alt="Keys: managed keybindings">
+
+- **Reads anything:** selection, clipboard, copied image, window, monitor or a dragged region.
+- **Scriptable:** `speak` plays, pauses and changes speed from the command line.
 
 ## Install
 
