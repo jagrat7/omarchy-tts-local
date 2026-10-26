@@ -65,7 +65,7 @@ class CliConfigTests(unittest.TestCase):
         info = json.loads(self.run_speak("--info").stdout)
         config = Path(self.temp.name, "omarchy-tts-local", "config.json")
         settings = json.loads(config.read_text())
-        self.assertEqual(info["provider"], "piper")
+        self.assertEqual(info["provider"], "kokoro_onnx")
         self.assertTrue(info["sanitizer"]["stripMarkdown"])
         self.assertEqual(settings["schemaVersion"], 6)
         for retired in ("openai", "elevenlabs", "gemini", "google"):
@@ -142,7 +142,7 @@ class CliConfigTests(unittest.TestCase):
         try:
             self.assertTrue(select.select([watcher.stdout], [], [], 3)[0])
             initial = json.loads(watcher.stdout.readline())
-            self.assertEqual(initial, {"status": "idle", "provider": "piper"})
+            self.assertEqual(initial, {"status": "idle", "provider": "kokoro_onnx"})
 
             self.run_speak("--set", ".provider", "kokoro")
             self.assertTrue(select.select([watcher.stdout], [], [], 3)[0])
@@ -244,7 +244,7 @@ class CliConfigTests(unittest.TestCase):
         config.parent.mkdir(parents=True)
         config.write_text('{"provider":')
         result = self.run_speak("--info")
-        self.assertEqual(json.loads(result.stdout)["provider"], "piper")
+        self.assertEqual(json.loads(result.stdout)["provider"], "kokoro_onnx")
         preserved = list(config.parent.glob("config.json.invalid.*"))
         self.assertEqual(len(preserved), 1)
         self.assertEqual(preserved[0].read_text(), '{"provider":')
@@ -3217,6 +3217,40 @@ class LanguageNameTableTests(unittest.TestCase):
     def test_no_duplicate_codes(self):
         codes = [r[0] for r in self.rows()]
         self.assertEqual(len(codes), len(set(codes)))
+
+
+class CpuSupportTests(unittest.TestCase):
+    """The engines' pinned NumPy is built for x86-64-v2. A processor without
+    it must get a plain sentence before any download, not a NumPy traceback."""
+
+    V2 = "flags\t\t: fpu sse sse2 ssse3 cx16 sse4_1 sse4_2 popcnt lahf_lm avx avx2\n"
+
+    def setUp(self):
+        self.setup = load_setup_module()
+
+    def test_x86_64_v2_processor_passes(self):
+        self.setup.check_cpu(self.V2, "x86_64")
+
+    def test_core2_era_processor_is_named_unsupported(self):
+        core2 = "flags\t\t: fpu sse sse2 ssse3 cx16 sse4_1 lahf_lm\n"
+        with self.assertRaises(self.setup.CpuUnsupported) as caught:
+            self.setup.check_cpu(core2, "x86_64")
+        self.assertIn("sse4_2", str(caught.exception))
+        self.assertIn("popcnt", str(caught.exception))
+        self.assertIn("2009", str(caught.exception))
+
+    def test_non_x86_machine_is_named_unsupported(self):
+        with self.assertRaises(self.setup.CpuUnsupported) as caught:
+            self.setup.check_cpu(self.V2, "aarch64")
+        self.assertIn("aarch64", str(caught.exception))
+
+    def test_recommended_setup_installs_kokoro_on_the_cpu_and_selects_it(self):
+        source = SETUP.read_text()
+        branch = source[source.index('if target == "recommended":'):source.index('elif target == "piper":')]
+        self.assertIn('install_engine_transaction(\n                    "kokoro_onnx"', branch)
+        self.assertIn("gpu=False", branch)
+        self.assertIn('select_provider("kokoro_onnx", device="cpu")', branch)
+        self.assertIn('code="cpu_unsupported"', source)
 
 
 if __name__ == "__main__":
