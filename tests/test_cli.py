@@ -2671,8 +2671,10 @@ class CancelledSpeechTests(unittest.TestCase):
         speaking.stdin.close()
         time.sleep(1.5)
         subprocess.run([SPEAK, "--stop"], env=self.env, capture_output=True)
-        _, stderr = speaking.communicate(timeout=30)
-        self.assertEqual(stderr, "")
+        # Not communicate(): Python 3.11 flushes the already-closed stdin.
+        speaking.wait(timeout=30)
+        self.assertEqual(speaking.stderr.read(), "")
+        speaking.stderr.close()
 
     def test_a_genuine_failure_is_still_recorded(self):
         self.write_provider("brokenlike", "cat > /dev/null; exit 4")
