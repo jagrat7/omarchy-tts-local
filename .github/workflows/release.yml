@@ -30,6 +30,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          name="$(jq -r .name manifest.json)"
           version="$(jq -r .version manifest.json)"
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
             || { echo "::error::manifest.json version is not semantic: $version"; exit 1; }
@@ -41,5 +42,5 @@ jobs:
           # A tag pushed by hand keeps its commit; only a new tag points here.
           target=()
           git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null || target=(--target "$GITHUB_SHA")
-          gh release create "$tag" "${target[@]}" --title "Local Text to Speech $version" \
+          gh release create "$tag" "${target[@]}" --title "$name $version" \
             --generate-notes --latest

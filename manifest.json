@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "io.github.jagrat7.omarchy-tts-local",
-  "name": "Local Text to Speech",
+  "name": "Text to Speech Local",
   "version": "1.0.0",
   "author": "jagrat7",
   "license": "MIT",
