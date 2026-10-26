@@ -12,7 +12,8 @@ Versioning.
   is folded into a voice picker under the transport, with a browse button
   when the engine downloads voices; with no voice installed the same line
   points to Providers, or to the catalogue. The length limit moved to the
-  Text tab. Space toggles pause. The panel always opens on
+  Text tab. The voice list opens upward when the picker is near the panel's
+  bottom edge, instead of running past it. Space toggles pause. The panel always opens on
   Overview.
 - Providers tab: the Provider and Screen tabs are one tab with Speech and
   Screen reading groups and a single setup progress line, leaving five tabs
