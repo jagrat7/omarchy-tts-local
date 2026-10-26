@@ -313,6 +313,15 @@ class CliConfigTests(unittest.TestCase):
         self.assertEqual(config.read_text(), '{"provider":')
         self.assertEqual(list(config.parent.glob("config.json.invalid.*")), [])
 
+    def test_info_reports_sanitizer_toggles_turned_off(self):
+        keys = ("inlineCode", "announceCodeBlocks", "stripMarkdown", "expandUnits")
+        for key in keys:
+            self.run_speak("--set-stdin-json", f".sanitizer.{key}",
+                           input_text=json.dumps("false") + "\n")
+        sanitizer = json.loads(self.run_speak("--info").stdout)["sanitizer"]
+        for key in keys:
+            self.assertIs(sanitizer[key], False, key)
+
     def test_stdin_json_protocol_preserves_strings_and_rejects_other_json(self):
         sample = '  true, "$HOME", backslash \\ and café  '
         saved = self.run_speak("--set-stdin-json", ".ui.sampleText",

@@ -551,10 +551,10 @@ emit_info() {
                | $config.ocr[$e].langs // (if $e == "tesseract" then $config.ocr.langs else null end) // "eng"),
         minConfidence:($config.ocr.minConfidence // 60), languages:$ocrLanguages, engines:$ocrEngines},
       sanitizer:{urls:($config.sanitizer.urls // "domain"),
-        inlineCode:($config.sanitizer.inlineCode // true),
-        announceCodeBlocks:($config.sanitizer.announceCodeBlocks // true),
-        stripMarkdown:($config.sanitizer.stripMarkdown // true),
-        expandUnits:($config.sanitizer.expandUnits // true)},
+        inlineCode:($config.sanitizer.inlineCode != false),
+        announceCodeBlocks:($config.sanitizer.announceCodeBlocks != false),
+        stripMarkdown:($config.sanitizer.stripMarkdown != false),
+        expandUnits:($config.sanitizer.expandUnits != false)},
       ui:{lastTab:($config.ui.lastTab // 0),
         sampleText:($config.ui.sampleText // "Highlight any text and press the key. This is how it sounds right now.")}}'
 }
