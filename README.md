@@ -1,9 +1,9 @@
 <h1 align="center">Omarchy TTS Local</h1>
 
 <p align="center">
-  <a href="https://github.com/jagrat7/omarchy-tts-local/pulls?q=is%3Apr+is%3Amerged"><img src="https://img.shields.io/github/manifest-json/v/jagrat7/omarchy-tts-local?style=flat-square&label=version&labelColor=1a1212&color=c8432b" alt="Version"></a>
-  <a href="https://omarchy.org/"><img src="https://img.shields.io/badge/Omarchy-Quattro-c8432b?style=flat-square&labelColor=1a1212&logo=archlinux&logoColor=white" alt="Omarchy Quattro"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/jagrat7/omarchy-tts-local?style=flat-square&labelColor=1a1212&color=c8432b" alt="MIT license"></a>
+  <a href="https://github.com/jagrat7/omarchy-tts-local/pulls?q=is%3Apr+is%3Amerged"><img src="https://img.shields.io/github/manifest-json/v/jagrat7/omarchy-tts-local?style=flat-square&label=version&labelColor=1c1d25&color=34c8cb" alt="Version"></a>
+  <a href="https://omarchy.org/"><img src="https://img.shields.io/badge/Omarchy-Quattro-34c8cb?style=flat-square&labelColor=1c1d25&logo=archlinux&logoColor=white" alt="Omarchy Quattro"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/jagrat7/omarchy-tts-local?style=flat-square&labelColor=1c1d25&color=34c8cb" alt="MIT license"></a>
 </p>
 
 An Omarchy bar plugin that reads text aloud on a hotkey: the selection, the
