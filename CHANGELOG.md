@@ -3,6 +3,13 @@
 All notable changes are documented here. This project follows Semantic
 Versioning.
 
+## Unreleased
+
+- Providers tab: the Provider and Screen tabs are one tab with Speech and
+  Screen reading groups and a single setup progress line, leaving five tabs
+  (number keys 1–5). Config schema 6 maps a saved `.ui.lastTab` onto the new
+  tabs; Screen reopens as Providers.
+
 ## 2.0.0 - 2026-10-16
 
 - **Breaking:** renamed to Omarchy TTS Local (`io.github.jagrat7.omarchy-tts-local`).

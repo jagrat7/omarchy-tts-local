@@ -11,7 +11,7 @@ clipboard, a copied image, the focused window, the whole monitor, or a region
 you drag. Speech (Piper or Kokoro) and OCR (Tesseract or EasyOCR) run locally.
 
 <p align="center">
-  <img src="docs/screenshots/provider.png" alt="Provider tab with Kokoro ONNX on the CPU and Piper not installed" width="560">
+  <img src="docs/screenshots/provider.png" alt="Providers tab with Kokoro ONNX on the CPU and Piper not installed" width="560">
 </p>
 
 ## Features
@@ -20,8 +20,9 @@ you drag. Speech (Piper or Kokoro) and OCR (Tesseract or EasyOCR) run locally.
   leaves the machine.
 - Kokoro ONNX: about 480 MB instead of about 6 GB for Kokoro PyTorch, and it
   starts in under a second. Runs on CPU or an NVIDIA GPU.
-- Provider tab: both Kokoro engines share one row with a CPU/GPU switch.
-  Engines install, test and uninstall from the panel.
+- Providers tab: speech engines and the screen-reading (OCR) engine in one
+  place. Both Kokoro engines share one row with a CPU/GPU switch. Engines
+  install, test and uninstall from the panel.
 - Engine downloads show their size first, show progress and can be
   cancelled. The ONNX CPU and GPU engines share one copy of the model files,
   and models are verified once rather than on every run.
@@ -34,7 +35,7 @@ omarchy plugin add https://github.com/jagrat7/omarchy-tts-local.git --enable
 
 Click the speaker icon in the bar. The first-run screen installs Piper and one
 voice (about 230 MB). Shortcuts are set up from the Keys tab, and Kokoro from
-the Provider tab.
+the Providers tab.
 
 <details>
 <summary>Upgrading from <code>io.github.hikari112.tts</code> or an older build</summary>
@@ -83,7 +84,8 @@ Ready only after it has produced speech on this machine.
 Words below `ocr.minConfidence` (default 60) are dropped instead of read; set
 it to `0` to keep everything. Copied PNG, JPEG, WebP, BMP and TIFF images are
 read through OCR. Capture works over fullscreen Steam/Proton games, though
-that varies by game.
+that varies by game. The engine and confidence floor are under Screen reading
+on the Providers tab; recognition languages have their own Languages tab.
 
 ## Command line
 

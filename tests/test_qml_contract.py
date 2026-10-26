@@ -71,6 +71,18 @@ class QmlContractTests(unittest.TestCase):
         self.assertIn("readonly property bool descendantControlActive", self.panel)
         self.assertIn("if (root.descendantControlActive) return", self.panel)
 
+    def test_provider_and_screen_engines_share_one_providers_tab(self):
+        self.assertIn('readonly property var tabNames: ["Providers", ', self.panel)
+        self.assertNotIn('"Screen"', self.panel)
+        # Sections and shortcuts follow the list, so a later tab change cannot
+        # leave a stale index or a dead number key behind.
+        self.assertIsNone(re.search(r"currentTab === \d", self.panel))
+        self.assertEqual(self.panel.count('root.currentTabName === "Providers"'), 2)
+        self.assertIn("event.key < Qt.Key_1 + tabCount", self.panel)
+        self.assertIn("Math.min(tabNames.length - 1,", self.panel)
+        # The two groups share one setup progress line.
+        self.assertEqual(self.panel.count("controller.setupJob.message"), 1)
+
     def test_panel_tab_navigation_enters_real_controls(self):
         self.assertIn("function moveTabFocus(direction)", self.panel)
         self.assertIn("candidate.nextItemInFocusChain(forward)", self.panel)

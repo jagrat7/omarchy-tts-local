@@ -1,8 +1,8 @@
 # Architecture and review guide
 
-The plugin has a six-tab settings panel: Provider, Voice, Text, Screen,
-Languages, and Keys. Its command-line boundary remains independently useful
-and testable.
+The plugin has a five-tab settings panel: Providers (speech and screen
+reading engines), Voice, Text, Languages, and Keys. Its command-line boundary
+remains independently useful and testable.
 
 ## Ownership boundaries
 
@@ -26,10 +26,12 @@ credential or sends selected text or captures off the machine.
 
 ## Configuration
 
-`config.json` schema version 5 is additive and backwards compatible. Startup
+`config.json` schema version 6 is additive and backwards compatible. Startup
 fills missing defaults without replacing existing values. Schema 5 removes the
 retired cloud providers' settings and moves a configuration that selected one
-of them (or a cloud OCR engine) to Piper or Tesseract. Invalid JSON, oversized
+of them (or a cloud OCR engine) to Piper or Tesseract. Schema 6 maps a saved
+`.ui.lastTab` from the old six tabs onto the five, so a panel last left on
+Screen reopens on Providers. Invalid JSON, oversized
 files, and unsafe nested shapes are preserved with an `.invalid.<timestamp>`
 suffix before type-safe defaults are restored. Writes are limited to an
 allowlist, serialized, and use an atomic rename with mode 0600. Existing config
@@ -63,8 +65,8 @@ invocation repairs artifacts left by abrupt process death or power loss.
 
 ## Deliberate design changes
 
-- Screen remains a dedicated tab, with recognition languages separated into
-  their own focused browser.
+- Speech and OCR engines share the Providers tab as two groups, with one
+  setup progress line; recognition languages keep their own focused browser.
 - Keys use Omarchy's current Lua configuration, not the obsolete `.conf` file
   in the original mockup.
 - Provider installs use reviewed Omarchy/uv commands and require confirmation.
@@ -80,7 +82,7 @@ invocation repairs artifacts left by abrupt process death or power loss.
 
 1. `lib/config.sh` and `bin/speak --info/--set`
 2. `components/TtsController.qml`
-3. the six sections in `Panel.qml`
+3. the tab sections in `Panel.qml`
 4. `bin/speak-setup` transaction and recovery behavior
 5. `bin/speak-voice` catalogue, verification, publication, and recovery
 6. `bin/speak-bindings` safety and coupled rollback behavior

@@ -68,7 +68,7 @@ tts_config_init_unlocked() {
     tmp="$(mktemp "${config_file}.XXXXXX")" || return 1
     if ! cat >"$tmp" <<'JSON'
 {
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "provider": "piper",
   "rate": 1.0,
   "maxChars": 0,
@@ -123,7 +123,8 @@ JSON
   # and espeak/spd) fall back to the local defaults, and their settings go.
   tmp="$(mktemp "${config_file}.XXXXXX")" || return 1
   if jq '
-    .schemaVersion = 5
+    (if (.schemaVersion|type) == "number" then .schemaVersion else 0 end) as $schema
+    | .schemaVersion = 6
     | .provider = (if (.provider|type) == "string" and (.provider|test("^[A-Za-z0-9._-]+$")) then .provider else "piper" end)
     | .provider = (if .provider | IN("espeak-ng", "spd", "openai", "elevenlabs", "gemini", "google") then "piper" else .provider end)
     | del(.openai, .elevenlabs, .gemini, .google)
@@ -160,6 +161,10 @@ JSON
     | .maxChars = (if (.maxChars|type)=="number" and .maxChars>=0 and .maxChars<=1048576 then (.maxChars|floor) else 0 end)
     | .ocr.minConfidence = (if (.ocr.minConfidence|type)=="number" and .ocr.minConfidence>=0 and .ocr.minConfidence<=100 then (.ocr.minConfidence|floor) else 60 end)
     | .ui.lastTab = (if (.ui.lastTab|type)=="number" and .ui.lastTab>=0 and .ui.lastTab<=5 then (.ui.lastTab|floor) else 0 end)
+    # Schema 6 merged the Provider and Screen tabs into Providers. Map the old
+    # six-tab index so the panel reopens on the same content.
+    | .ui.lastTab = (if $schema < 6 then [0, 1, 2, 0, 3, 4][.ui.lastTab] else .ui.lastTab end)
+    | .ui.lastTab = (if .ui.lastTab <= 4 then .ui.lastTab else 0 end)
   ' "$config_file" >"$tmp"; then
     chmod 600 "$tmp" || { rm -f "$tmp"; return 1; }
     if cmp -s -- "$tmp" "$config_file"; then
@@ -214,7 +219,7 @@ tts_config_set_unlocked() { # jq path, JSON-or-string value
     .sanitizer.urls) [[ "$value" == domain || "$value" == link ]] || return 3 ;;
     .sanitizer.inlineCode|.sanitizer.announceCodeBlocks|.sanitizer.stripMarkdown|.sanitizer.expandUnits)
       [[ "$value" == true || "$value" == false ]] || return 3 ;;
-    .ui.lastTab) [[ "$value" =~ ^[0-5]$ ]] || return 3 ;;
+    .ui.lastTab) [[ "$value" =~ ^[0-4]$ ]] || return 3 ;;
     .ui.sampleText) [[ ${#value} -le 4096 ]] || return 3 ;;
   esac
   tmp="$(mktemp "${config_file}.XXXXXX")" || return 1
