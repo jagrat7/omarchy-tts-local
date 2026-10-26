@@ -451,7 +451,6 @@ record_ocr_outcome() { # record_ocr_outcome <engine> <rc> <text> <fingerprint>
 
 emit_info() {
   local voices_dir="${PIPER_VOICES_DIR:-$DATA_DIR/voices/piper}"
-  local legacy_voices_dir="$HOME/.local/share/piper-voices"
   local config provs="[]" vs="[]" active voice voice_path
   config="$(jq -c '.' "$CONFIG")" || return 1
   provs="$(
@@ -518,7 +517,7 @@ emit_info() {
   case "$active" in
     piper)
       voice="$(voice_for_provider piper)"; voice_path=.piper.voice
-      vs="$(for m in "$voices_dir"/*.onnx "$legacy_voices_dir"/*.onnx; do
+      vs="$(for m in "$voices_dir"/*.onnx; do
           [[ -s "$m" && -s "$m.json" ]] && basename "$m" .onnx
         done |
         sort -u | jq -Rsc 'split("\n") | map(select(length>0))')" ;;
@@ -921,7 +920,6 @@ if [[ $speech_request -eq 1 ]]; then
   register_preparation || die "could not register speech preparation"
 fi
 
-tts_migrate_legacy_dirs
 tts_config_init || { printf 'speak: could not initialize %s\n' "$CONFIG" >&2; exit 1; }
 
 OCRMODE=0
