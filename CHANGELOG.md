@@ -9,9 +9,10 @@ Versioning.
   the current sentence held in the middle, progress, play/pause, stop and a
   speed slider that retunes the reading in progress (via `--live-rate`).
   Idle, the same box holds the sample text and Enter plays it. The Voice tab
-  is folded into a one-line voice summary that expands in place; with no
-  voice installed it points to Providers, or to the catalogue when the
-  engine downloads voices. Space toggles pause. The panel always opens on
+  is folded into a voice picker under the transport, with a browse button
+  when the engine downloads voices; with no voice installed the same line
+  points to Providers, or to the catalogue. The length limit moved to the
+  Text tab. Space toggles pause. The panel always opens on
   Overview.
 - Providers tab: the Provider and Screen tabs are one tab with Speech and
   Screen reading groups and a single setup progress line, leaving five tabs

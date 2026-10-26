@@ -252,19 +252,16 @@ Panel {
   readonly property real rateMaximum: root.rateSupported ? Number(root.activeProvider.rateMax) : 1
   // Overview -------------------------------------------------------------
   readonly property string playState: controller.status
-  property bool voiceOpen: false
   readonly property bool voicesDownloadable: !root.activeProvider || root.activeProvider.voices === "downloadable"
   // Nothing to speak with, whoever supplies the voices; only the download
   // offer depends on whether this provider's voices can be fetched.
   readonly property bool voiceMissing: controller.infoLoaded && root.voiceOptions.length === 0
   // With no voice the row stays one line and points at where to get one:
   // the catalogue when this engine downloads voices, otherwise Providers.
-  onVoiceMissingChanged: if (root.voiceMissing) root.voiceOpen = false
   readonly property bool voiceFetchable: root.voiceMissing && !!root.activeProvider && root.activeProvider.voices === "downloadable"
   function voiceRowActivate() {
     if (root.voiceFetchable) root.openCatalogue()
-    else if (root.voiceMissing) root.currentTab = root.tabNames.indexOf("Providers")
-    else root.voiceOpen = !root.voiceOpen
+    else root.currentTab = root.tabNames.indexOf("Providers")
   }
   readonly property int prompterPx: Style.fontPx(1.25)
   function playSample() { if (!root.voiceMissing && root.sampleText.trim() !== "") controller.speak(root.sampleText) }
@@ -842,85 +839,59 @@ Panel {
             }
           }
 
-          // Everything about the voice, folded into one line until asked for.
+          // The voice is picked right here. With none installed the same line
+          // says so and points at where to get one.
           Rectangle {
-            id: voiceCard
-            width: parent.width; height: voiceCardColumn.implicitHeight + Style.space(14); radius: Style.space(6)
-            color: root.voiceOpen ? root.tint(0.06) : "transparent"
-            border.width: 1; border.color: Style.controlBorder(voiceToggle.activeFocus, voiceHover.hovered, root.fg, Commons.Color.accent)
+            id: voiceMissingRow
+            width: parent.width; height: voiceMissingLine.implicitHeight + Style.space(14); radius: Style.space(6)
+            visible: root.voiceMissing; color: "transparent"
+            border.width: 1; border.color: Style.controlBorder(voiceMissingRow.activeFocus, voiceHover.hovered, root.fg, Commons.Color.accent)
+            activeFocusOnTab: visible
+            Accessible.role: Accessible.Button
+            Accessible.name: "No voice installed, " + voiceAction.text
+            Accessible.onPressAction: root.voiceRowActivate()
+            Keys.onSpacePressed: root.voiceRowActivate()
+            Keys.onReturnPressed: root.voiceRowActivate()
+            Keys.onEnterPressed: root.voiceRowActivate()
             HoverHandler { id: voiceHover }
-            Column {
-              id: voiceCardColumn
-              anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
-              anchors.margins: Style.space(10); anchors.topMargin: Style.space(7); spacing: Style.space(10)
-              Item {
-                id: voiceToggle
-                width: parent.width; height: Math.max(voiceGlyph.implicitHeight, voiceChevron.implicitHeight)
-                activeFocusOnTab: true
-                Accessible.role: Accessible.Button
-                Accessible.name: "Voice settings, " + voiceSummary.text
-                Accessible.expanded: root.voiceOpen
-                Accessible.onPressAction: root.voiceRowActivate()
-                Keys.onSpacePressed: root.voiceRowActivate()
-                Keys.onReturnPressed: root.voiceRowActivate()
-                Keys.onEnterPressed: root.voiceRowActivate()
-                Text { id: voiceGlyph; anchors.verticalCenter: parent.verticalCenter; text: "󰗋"; color: root.voiceMissing ? Commons.Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
-                Text {
-                  id: voiceSummary
-                  anchors.left: voiceGlyph.right; anchors.leftMargin: Style.space(8)
-                  anchors.right: voiceAction.visible ? voiceAction.left : voiceChevron.left; anchors.rightMargin: Style.space(8)
-                  anchors.verticalCenter: parent.verticalCenter
-                  elide: Text.ElideRight; textFormat: Text.PlainText
-                  // What you hear, how fast and how much, in one line.
-                  text: root.voiceMissing ? "No voice installed"
-                        : ["Voice", root.activeVoiceLabel(),
-                           root.rateSupported ? root.rateValue.toFixed(2) + "×" : "",
-                           controller.info.maxChars > 0 ? "≤" + controller.info.maxChars + " chars" : "unlimited"]
-                          .filter(function(part) { return part !== "" }).join(" · ")
-                  color: root.voiceMissing ? Commons.Color.accent : root.fg
-                  font.family: root.ff; font.pixelSize: Style.font.body
-                }
-                InlineAction {
-                  id: voiceAction
-                  anchors.right: voiceChevron.visible ? voiceChevron.left : parent.right; anchors.rightMargin: voiceChevron.visible ? Style.space(10) : 0; anchors.verticalCenter: parent.verticalCenter
-                  visible: root.voiceMissing
-                  text: root.voiceFetchable ? "󰇚 Download" : "Open Providers 󰅂"; color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
-                  onTriggered: root.voiceRowActivate()
-                }
-                Text { id: voiceChevron; visible: !root.voiceMissing; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: root.voiceOpen ? "󰅃" : "󰅀"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
-                MouseArea { anchors.fill: parent; z: -1; cursorShape: Qt.PointingHandCursor; onClicked: root.voiceRowActivate() }
-              }
-              Dropdown { id: voiceDropdown; visible: root.voiceOpen; width: parent.width; showLabel: false; foreground: root.fg; options: root.voiceOptions.length ? root.voiceOptions : [{ label: "No voice installed", value: "" }]; value: controller.info.voice || ""; onValueChanged: if (value && value !== controller.info.voice && value !== "No voice installed") controller.setConfig(controller.info.voicePath || ".piper.voice", value) }
-              Button { width: parent.width; visible: root.voiceOpen && root.voicesDownloadable; text: controller.info.voices?.length ? "Browse all voices" : "Download a voice"; iconText: "󰇚"; bordered: true; focusable: true; foreground: controller.info.voices?.length ? root.fg : Commons.Color.accent; onClicked: root.openCatalogue() }
-              Item {
-                width: parent.width; height: limitHeader.implicitHeight; visible: root.voiceOpen
-                PanelSectionHeader { id: limitHeader; text: "Length limit"; foreground: root.fg }
-                Text { anchors.right: parent.right; text: controller.info.maxChars > 0 ? "~" + Math.max(1, Math.round(controller.info.maxChars / 900)) + " min" : "unlimited"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-              }
-              Row { width: parent.width; spacing: 8; visible: root.voiceOpen
-                Button { width: 48; text: "−500"; bordered: true; focusable: true; onClicked: controller.setConfig(".maxChars", Math.max(0, Number(controller.info.maxChars)-500)) }
-                TextField {
-                  id: maxCharsField; width: parent.width - 112
-                  text: String(controller.info.maxChars || 0); foreground: root.fg
-                  maximumLength: 7
-                  inputMethodHints: Qt.ImhDigitsOnly
-                  validator: IntValidator { bottom: 0; top: 1048576 }
-                  onEditingFinished: controller.setConfig(".maxChars", Math.max(0, Math.min(1048576, Number(text) || 0)))
-                }
-                Button { width: 48; text: "+500"; bordered: true; focusable: true; onClicked: controller.setConfig(".maxChars", Math.min(1048576, Number(controller.info.maxChars||0)+500)) }
-              }
+            Item {
+              id: voiceMissingLine
+              anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: Style.space(10); anchors.rightMargin: Style.space(10)
+              implicitHeight: Math.max(voiceGlyph.implicitHeight, voiceAction.implicitHeight)
+              Text { id: voiceGlyph; anchors.verticalCenter: parent.verticalCenter; text: "󰗋"; color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.body }
               Text {
-                width: parent.width
-                visible: root.voiceOpen && root.activeProvider && Number(root.activeProvider.maxBytes || 0) > 0
-                wrapMode: Text.WordWrap
-                textFormat: Text.PlainText
-                text: root.activeProvider
-                      ? (root.activeProvider.title || root.activeProvider.name) + " allows "
-                        + root.activeProvider.maxBytes
-                        + " UTF-8 bytes per request. Non-Latin characters can use more than one byte."
-                      : ""
-                color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                anchors.left: voiceGlyph.right; anchors.leftMargin: Style.space(8)
+                anchors.right: voiceAction.left; anchors.rightMargin: Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+                elide: Text.ElideRight; textFormat: Text.PlainText
+                text: "No voice installed"; color: Commons.Color.accent
+                font.family: root.ff; font.pixelSize: Style.font.body
               }
+              InlineAction {
+                id: voiceAction
+                anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                text: root.voiceFetchable ? "󰇚 Download" : "Open Providers 󰅂"; color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
+                onTriggered: root.voiceRowActivate()
+              }
+            }
+            MouseArea { anchors.fill: parent; z: -1; cursorShape: Qt.PointingHandCursor; onClicked: root.voiceRowActivate() }
+          }
+          Row {
+            width: parent.width; spacing: Style.space(6); visible: !root.voiceMissing
+            Dropdown {
+              id: voiceDropdown
+              width: parent.width - (browseVoices.visible ? browseVoices.width + parent.spacing : 0)
+              showLabel: false; foreground: root.fg
+              options: root.voiceOptions; value: controller.info.voice || ""
+              onValueChanged: if (value && value !== controller.info.voice) controller.setConfig(controller.info.voicePath || ".piper.voice", value)
+            }
+            Button {
+              id: browseVoices
+              visible: root.voicesDownloadable; width: height; height: voiceDropdown.height
+              iconText: "󰇚"; tooltipText: "Browse all voices"; Accessible.name: "Browse all voices"
+              bordered: true; focusable: true; foreground: root.fg
+              onClicked: root.openCatalogue()
             }
           }
         }
@@ -1404,6 +1375,37 @@ Panel {
           SettingToggle { label: "Announce skipped code blocks"; checked: controller.info.sanitizer?.announceCodeBlocks !== false; foreground: root.fg; onToggled: function(value) { controller.setConfig(".sanitizer.announceCodeBlocks", value) } }
           SettingToggle { label: "Strip Markdown symbols"; checked: controller.info.sanitizer?.stripMarkdown !== false; foreground: root.fg; onToggled: function(value) { controller.setConfig(".sanitizer.stripMarkdown", value) } }
           SettingToggle { label: "Expand abbreviations and units"; checked: controller.info.sanitizer?.expandUnits !== false; foreground: root.fg; onToggled: function(value) { controller.setConfig(".sanitizer.expandUnits", value) } }
+          // How much of a selection is read. It shapes what gets spoken, so
+          // it lives with the other text rules rather than with the voice.
+          Item {
+            width: parent.width; height: limitHeader.implicitHeight
+            PanelSectionHeader { id: limitHeader; text: "Length limit"; foreground: root.fg }
+            Text { anchors.right: parent.right; text: controller.info.maxChars > 0 ? "~" + Math.max(1, Math.round(controller.info.maxChars / 900)) + " min" : "unlimited"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+          }
+          Row { width: parent.width; spacing: 8
+            Button { width: 48; text: "−500"; bordered: true; focusable: true; onClicked: controller.setConfig(".maxChars", Math.max(0, Number(controller.info.maxChars)-500)) }
+            TextField {
+              id: maxCharsField; width: parent.width - 112
+              text: String(controller.info.maxChars || 0); foreground: root.fg
+              maximumLength: 7
+              inputMethodHints: Qt.ImhDigitsOnly
+              validator: IntValidator { bottom: 0; top: 1048576 }
+              onEditingFinished: controller.setConfig(".maxChars", Math.max(0, Math.min(1048576, Number(text) || 0)))
+            }
+            Button { width: 48; text: "+500"; bordered: true; focusable: true; onClicked: controller.setConfig(".maxChars", Math.min(1048576, Number(controller.info.maxChars||0)+500)) }
+          }
+          Text {
+            width: parent.width
+            visible: !!root.activeProvider && Number(root.activeProvider.maxBytes || 0) > 0
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            text: root.activeProvider
+                  ? (root.activeProvider.title || root.activeProvider.name) + " allows "
+                    + root.activeProvider.maxBytes
+                    + " UTF-8 bytes per request. Non-Latin characters can use more than one byte."
+                  : ""
+            color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+          }
           Timer { id: previewDelay; interval: 180; onTriggered: controller.previewText(root.previewSource) }
         }
 
