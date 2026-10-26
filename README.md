@@ -40,6 +40,17 @@ runs on the CPU (about 480 MB). If Kokoro can't run on this computer, the
 screen says why and offers Piper instead. Shortcuts are set up from the Keys
 tab, and other providers from the Providers tab.
 
+## Uninstall
+
+Remove the shortcuts from the Keys tab, then:
+
+```bash
+omarchy plugin remove io.github.jagrat7.omarchy-tts-local
+```
+
+Downloaded data stays in `~/.local/share/omarchy-tts-local`,
+`~/.config/omarchy-tts-local` and `~/.cache/omarchy-tts-local`.
+
 ## Keys
 
 | Key | Action |
@@ -167,17 +178,6 @@ Nothing you read or capture is sent anywhere; the network is only used for
 downloads you start. Engines install from hash-pinned locks in
 [`lib/engines/`](lib/engines), and models and voices are checked against
 SHA-256 digests. See [SECURITY.md](SECURITY.md).
-
-## Remove
-
-Remove the shortcuts from the Keys tab, then:
-
-```bash
-omarchy plugin remove io.github.jagrat7.omarchy-tts-local
-```
-
-Downloaded data stays in `~/.local/share/omarchy-tts-local`,
-`~/.config/omarchy-tts-local` and `~/.cache/omarchy-tts-local`.
 
 ## Development
 
