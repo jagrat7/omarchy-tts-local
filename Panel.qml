@@ -257,6 +257,15 @@ Panel {
   // Nothing to speak with, whoever supplies the voices; only the download
   // offer depends on whether this provider's voices can be fetched.
   readonly property bool voiceMissing: controller.infoLoaded && root.voiceOptions.length === 0
+  // With no voice the row stays one line and points at where to get one:
+  // the catalogue when this engine downloads voices, otherwise Providers.
+  onVoiceMissingChanged: if (root.voiceMissing) root.voiceOpen = false
+  readonly property bool voiceFetchable: root.voiceMissing && !!root.activeProvider && root.activeProvider.voices === "downloadable"
+  function voiceRowActivate() {
+    if (root.voiceFetchable) root.openCatalogue()
+    else if (root.voiceMissing) root.currentTab = root.tabNames.indexOf("Providers")
+    else root.voiceOpen = !root.voiceOpen
+  }
   readonly property int prompterPx: Style.fontPx(1.25)
   function playSample() { if (!root.voiceMissing && root.sampleText.trim() !== "") controller.speak(root.sampleText) }
   function openCatalogue() { root.browsing = true; root.voiceFilter = ""; controller.loadCatalogue() }
@@ -731,7 +740,7 @@ Panel {
                 Text {
                   id: footerLeft
                   textFormat: Text.PlainText
-                  text: !prompterScreen.reading ? (root.voiceMissing ? (root.voicesDownloadable ? "Download a voice to hear this" : "No voice to play this with") : "Sample · Enter to play")
+                  text: !prompterScreen.reading ? (root.voiceMissing ? (root.voiceFetchable ? "Download a voice to hear this" : "Install a voice in Providers to hear this") : "Sample · Enter to play")
                         : root.npDuration > 0 ? root.clockText(root.npElapsed) : ""
                   color: root.voiceMissing && !prompterScreen.reading ? Commons.Color.accent : root.dim
                   font.family: root.ff; font.pixelSize: Style.font.caption
@@ -851,15 +860,15 @@ Panel {
                 Accessible.role: Accessible.Button
                 Accessible.name: "Voice settings, " + voiceSummary.text
                 Accessible.expanded: root.voiceOpen
-                Accessible.onPressAction: root.voiceOpen = !root.voiceOpen
-                Keys.onSpacePressed: root.voiceOpen = !root.voiceOpen
-                Keys.onReturnPressed: root.voiceOpen = !root.voiceOpen
-                Keys.onEnterPressed: root.voiceOpen = !root.voiceOpen
+                Accessible.onPressAction: root.voiceRowActivate()
+                Keys.onSpacePressed: root.voiceRowActivate()
+                Keys.onReturnPressed: root.voiceRowActivate()
+                Keys.onEnterPressed: root.voiceRowActivate()
                 Text { id: voiceGlyph; anchors.verticalCenter: parent.verticalCenter; text: "󰗋"; color: root.voiceMissing ? Commons.Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
                 Text {
                   id: voiceSummary
                   anchors.left: voiceGlyph.right; anchors.leftMargin: Style.space(8)
-                  anchors.right: voiceDownload.visible ? voiceDownload.left : voiceChevron.left; anchors.rightMargin: Style.space(8)
+                  anchors.right: voiceAction.visible ? voiceAction.left : voiceChevron.left; anchors.rightMargin: Style.space(8)
                   anchors.verticalCenter: parent.verticalCenter
                   elide: Text.ElideRight; textFormat: Text.PlainText
                   // What you hear, how fast and how much, in one line.
@@ -872,14 +881,14 @@ Panel {
                   font.family: root.ff; font.pixelSize: Style.font.body
                 }
                 InlineAction {
-                  id: voiceDownload
-                  anchors.right: voiceChevron.left; anchors.rightMargin: Style.space(10); anchors.verticalCenter: parent.verticalCenter
-                  visible: root.voiceMissing && root.voicesDownloadable
-                  text: "󰇚 Download"; color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
-                  onTriggered: root.openCatalogue()
+                  id: voiceAction
+                  anchors.right: voiceChevron.visible ? voiceChevron.left : parent.right; anchors.rightMargin: voiceChevron.visible ? Style.space(10) : 0; anchors.verticalCenter: parent.verticalCenter
+                  visible: root.voiceMissing
+                  text: root.voiceFetchable ? "󰇚 Download" : "Open Providers 󰅂"; color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
+                  onTriggered: root.voiceRowActivate()
                 }
-                Text { id: voiceChevron; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: root.voiceOpen ? "󰅃" : "󰅀"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
-                MouseArea { anchors.fill: parent; z: -1; cursorShape: Qt.PointingHandCursor; onClicked: root.voiceOpen = !root.voiceOpen }
+                Text { id: voiceChevron; visible: !root.voiceMissing; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: root.voiceOpen ? "󰅃" : "󰅀"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
+                MouseArea { anchors.fill: parent; z: -1; cursorShape: Qt.PointingHandCursor; onClicked: root.voiceRowActivate() }
               }
               Dropdown { id: voiceDropdown; visible: root.voiceOpen; width: parent.width; showLabel: false; foreground: root.fg; options: root.voiceOptions.length ? root.voiceOptions : [{ label: "No voice installed", value: "" }]; value: controller.info.voice || ""; onValueChanged: if (value && value !== controller.info.voice && value !== "No voice installed") controller.setConfig(controller.info.voicePath || ".piper.voice", value) }
               Button { width: parent.width; visible: root.voiceOpen && root.voicesDownloadable; text: controller.info.voices?.length ? "Browse all voices" : "Download a voice"; iconText: "󰇚"; bordered: true; focusable: true; foreground: controller.info.voices?.length ? root.fg : Commons.Color.accent; onClicked: root.openCatalogue() }
