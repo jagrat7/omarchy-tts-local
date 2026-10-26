@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "io.github.jagrat7.omarchy-tts-local",
-  "name": "Text to Speech Local",
+  "name": "tts-local",
   "version": "1.0.0",
   "author": "jagrat7",
   "license": "MIT",
@@ -13,7 +13,7 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Local Text to Speech",
+    "displayName": "tts-local",
     "description": "Read selected text or anything visible on screen",
     "category": "Info",
     "allowMultiple": false,
