@@ -67,7 +67,7 @@ class CliConfigTests(unittest.TestCase):
         settings = json.loads(config.read_text())
         self.assertEqual(info["provider"], "piper")
         self.assertTrue(info["sanitizer"]["stripMarkdown"])
-        self.assertEqual(settings["schemaVersion"], 5)
+        self.assertEqual(settings["schemaVersion"], 6)
         for retired in ("openai", "elevenlabs", "gemini", "google"):
             self.assertNotIn(retired, settings)
         self.assertEqual(config.stat().st_mode & 0o777, 0o600)
@@ -101,12 +101,29 @@ class CliConfigTests(unittest.TestCase):
         settings = json.loads(config.read_text())
         self.assertEqual(info["provider"], "piper")
         self.assertEqual(info["ocr"]["engine"], "tesseract")
-        self.assertEqual(settings["schemaVersion"], 5)
+        self.assertEqual(settings["schemaVersion"], 6)
         for retired in ("openai", "elevenlabs", "gemini", "google"):
             self.assertNotIn(retired, settings)
             self.assertNotIn(retired, settings["ocr"])
         self.assertNotIn("collapsed", settings["ui"])
         self.assertEqual(settings["ui"]["lastTab"], 2)
+
+    def test_last_tab_follows_the_merged_providers_tab(self):
+        """Schema 6 merged Provider and Screen into one Providers tab. An index
+        saved under the old six tabs lands on the same content; one saved
+        under the new five is kept, and only those five can be written."""
+        config = Path(self.temp.name, "omarchy-tts-local", "config.json")
+        config.parent.mkdir(parents=True)
+        for schema, saved, expected in ((5, 0, 0), (5, 1, 1), (5, 2, 2), (5, 3, 0),
+                                        (5, 4, 3), (5, 5, 4), (6, 3, 3), (6, 5, 0)):
+            with self.subTest(schema=schema, saved=saved):
+                config.write_text(json.dumps({"schemaVersion": schema, "ui": {"lastTab": saved}}))
+                info = json.loads(self.run_speak("--info").stdout)
+                self.assertEqual(info["ui"]["lastTab"], expected)
+                self.assertEqual(json.loads(config.read_text())["schemaVersion"], 6)
+        self.run_speak("--set", ".ui.lastTab", "4")
+        self.assertNotEqual(self.run_speak("--set", ".ui.lastTab", "5", check=False).returncode, 0)
+        self.assertEqual(json.loads(config.read_text())["ui"]["lastTab"], 4)
 
     def test_help_does_not_require_or_create_writable_state(self):
         blocked = Path(self.temp.name, "blocked")
@@ -2654,8 +2671,10 @@ class CancelledSpeechTests(unittest.TestCase):
         speaking.stdin.close()
         time.sleep(1.5)
         subprocess.run([SPEAK, "--stop"], env=self.env, capture_output=True)
-        _, stderr = speaking.communicate(timeout=30)
-        self.assertEqual(stderr, "")
+        # Not communicate(): Python 3.11 flushes the already-closed stdin.
+        speaking.wait(timeout=30)
+        self.assertEqual(speaking.stderr.read(), "")
+        speaking.stderr.close()
 
     def test_a_genuine_failure_is_still_recorded(self):
         self.write_provider("brokenlike", "cat > /dev/null; exit 4")

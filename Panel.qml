@@ -19,7 +19,10 @@ Panel {
   readonly property color dim: Commons.Color.muted
   readonly property string ff: bar ? bar.fontFamily : Style.font.family
   property int currentTab: 0
-  readonly property var tabNames: ["Provider", "Voice", "Text", "Screen", "Languages", "Keys"]
+  readonly property var tabNames: ["Providers", "Voice", "Text", "Languages", "Keys"]
+  // Sections test the name, not the index, so adding or reordering a tab
+  // touches only the list above.
+  readonly property string currentTabName: tabNames[currentTab] || ""
   property bool browsing: false
   property string voiceFilter: ""
   property string previewSource: "Visit https://omarchy.org in ~2s and run `speak --help`."
@@ -385,7 +388,7 @@ Panel {
   function restoreFromInfo() {
     if (!restorePending || !controller.infoLoaded) return
     restorePending = false
-    currentTab = Math.max(0, Math.min(5, Number(controller.info.ui?.lastTab || 0)))
+    currentTab = Math.max(0, Math.min(tabNames.length - 1, Number(controller.info.ui?.lastTab || 0)))
     sampleText = String(controller.info.ui?.sampleText || sampleText)
     controller.previewText(previewSource)
   }
@@ -454,9 +457,10 @@ Panel {
           if (chord) root.capturedChord = chord
           event.accepted = true; return
         }
-        if (event.key === Qt.Key_Left) root.currentTab = (root.currentTab + 5) % 6
-        else if (event.key === Qt.Key_Right) root.currentTab = (root.currentTab + 1) % 6
-        else if (event.key >= Qt.Key_1 && event.key <= Qt.Key_6) root.currentTab = event.key - Qt.Key_1
+        var tabCount = root.tabNames.length
+        if (event.key === Qt.Key_Left) root.currentTab = (root.currentTab + tabCount - 1) % tabCount
+        else if (event.key === Qt.Key_Right) root.currentTab = (root.currentTab + 1) % tabCount
+        else if (event.key >= Qt.Key_1 && event.key < Qt.Key_1 + tabCount) root.currentTab = event.key - Qt.Key_1
         else return
         event.accepted = true
       }
@@ -518,12 +522,14 @@ Panel {
           onSkipped: root.setupSkipped = true
         }
 
-        // Provider ---------------------------------------------------------
+        // Providers: speech ------------------------------------------------
+        // Speech and screen reading are both engines that run here, chosen once
+        // and rarely revisited, so one tab holds them as two adjacent groups.
         Column {
-          width: parent.width; spacing: Style.space(4); visible: !root.needsSetup && root.currentTab === 0
+          width: parent.width; spacing: Style.space(4); visible: !root.needsSetup && root.currentTabName === "Providers"
           Item {
             width: parent.width; height: providerHeader.implicitHeight
-            PanelSectionHeader { id: providerHeader; text: "Speech provider"; foreground: root.fg }
+            PanelSectionHeader { id: providerHeader; text: "Speech"; foreground: root.fg }
           }
           Component {
             id: providerRow
@@ -729,6 +735,134 @@ Panel {
             onCancelled: root.confirmUninstall = ""
             onConfirmed: function(uninstallTarget) { controller.uninstall(uninstallTarget); root.confirmUninstall = "" }
           }
+        }
+
+        // Providers: screen reading ----------------------------------------
+        Column {
+          width: parent.width; spacing: Style.space(4); visible: !root.needsSetup && root.currentTabName === "Providers"
+          Item {
+            width: parent.width; height: engineHeader.implicitHeight
+            PanelSectionHeader { id: engineHeader; text: "Screen reading"; foreground: root.fg }
+            Text { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: "Captures stay on this computer"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+          }
+          Component {
+            id: ocrRow
+            Rectangle {
+              required property var modelData
+              readonly property bool selected: modelData.name === (controller.info.ocr?.engine || "tesseract")
+              readonly property bool ready: modelData.status === "ready"
+              readonly property bool failing: modelData.status === "failing"
+              readonly property bool untested: modelData.status === "untested"
+              readonly property bool usable: ready || untested
+              function activateRow() { if (usable) controller.selectOcrEngine(modelData.name, untested) }
+              function activateAction() {
+                var row = this
+                if (row.failing && row.modelData.install) {
+                  root.ocrConfirmEngine = row.modelData.name
+                  root.ocrConfirmInstall = row.modelData.install
+                } else if (row.failing || row.untested) {
+                  controller.verifyOcrEngine(row.modelData.name)
+                } else {
+                  root.ocrConfirmEngine = row.modelData.name
+                  root.ocrConfirmInstall = row.modelData.install
+                }
+              }
+              width: parent ? parent.width : 0; height: engineCopy.implicitHeight + Style.space(12); radius: Style.space(6)
+              color: selected ? root.tint(0.10) : "transparent"; border.width: selected || activeFocus ? 1 : 0; border.color: activeFocus ? Commons.Color.accent : root.tint(0.45)
+              activeFocusOnTab: usable
+              Accessible.role: Accessible.RadioButton
+              Accessible.name: (modelData.title || modelData.name) + ", " + modelData.status
+              Accessible.checked: selected
+              Accessible.onPressAction: activateRow()
+              Keys.onSpacePressed: activateRow()
+              Keys.onReturnPressed: activateRow()
+              Keys.onEnterPressed: activateRow()
+              Column {
+                id: engineCopy; z: 1; anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; anchors.leftMargin: Style.space(8); anchors.rightMargin: Style.space(8); spacing: 2
+                Item {
+                  width: parent.width; height: engineName.implicitHeight
+                  Text { id: engineRadio; text: parent.parent.parent.selected ? "󰝥" : "󰝦"; color: parent.parent.parent.ready ? (parent.parent.parent.selected ? Commons.Color.accent : root.fg) : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
+                  Text { id: engineName; anchors.left: engineRadio.right; anchors.leftMargin: 8; textFormat: Text.PlainText; text: parent.parent.parent.modelData.title || parent.parent.parent.modelData.name; color: parent.parent.parent.usable ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
+                  Text { anchors.right: engineAction.visible ? engineAction.left : parent.right; anchors.rightMargin: engineAction.visible ? 8 : 0; anchors.verticalCenter: parent.verticalCenter
+                    text: { var d = parent.parent.parent
+                            if (d.failing) return "Not working"
+                            return d.ready ? "● Ready" : "" }
+                    color: { var d = parent.parent.parent; return d.failing ? Commons.Color.urgent : d.ready ? Commons.Color.accent : root.dim }
+                    font.family: root.ff; font.pixelSize: Style.font.caption
+                  }
+                  InlineAction {
+                    id: engineAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; visible: (!parent.parent.parent.ready && !parent.parent.parent.untested) || controller.verifying === "ocr:" + parent.parent.parent.modelData.name
+                    text: { var d = parent.parent.parent
+                            if (controller.verifying === "ocr:" + d.modelData.name) return "Testing…"
+                            if (d.failing && d.modelData.install) return "Repair"
+                            if (d.failing) return "Retry"
+                            return "Install" }
+                    color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
+                    onTriggered: parent.parent.parent.activateAction()
+                  }
+                }
+                InlineAction {
+                  anchors.right: parent.right
+                  visible: root.canUninstall(parent.parent.modelData)
+                  text: "󰆴"; Accessible.name: "Uninstall"; color: hovered || activeFocus ? Commons.Color.urgent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                  onTriggered: root.ocrConfirmUninstall = parent.parent.modelData.name
+                }
+                Text { width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText; text: parent.parent.modelData.desc || ""; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+                Text { visible: parent.parent.failing; width: parent.width; wrapMode: Text.WordWrap; text: "Installed, but it could not read the test image. Press Test to try again."; color: Commons.Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
+              }
+              MouseArea { anchors.fill: parent; enabled: parent.usable; z: 0; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
+            }
+          }
+          Column {
+            width: parent.width; spacing: Style.space(4)
+            Repeater { model: controller.info.ocr?.engines || []; delegate: ocrRow }
+          }
+          EngineConfirm {
+            width: parent.width
+            target: root.ocrConfirmInstall !== "" ? ((controller.info.ocr?.engines || []).find(function(e) { return e.name === root.ocrConfirmEngine }) || null) : null
+            foreground: root.fg; fontFamily: root.ff
+            onCancelled: { root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
+            onConfirmed: { controller.installProvider(root.ocrConfirmEngine); root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
+          }
+          EngineConfirm {
+            mode: "uninstall"
+            width: parent.width
+            target: root.ocrConfirmUninstall !== "" ? ((controller.info.ocr?.engines || []).find(function(e) { return e.name === root.ocrConfirmUninstall }) || null) : null
+            activeName: controller.info.ocr?.engine || ""
+            inUseWarning: "This is the OCR engine in use. Pick another one afterwards or screen reading will stop."
+            foreground: root.fg; fontFamily: root.ff
+            onCancelled: root.ocrConfirmUninstall = ""
+            onConfirmed: function(uninstallTarget) { controller.uninstall(uninstallTarget); root.ocrConfirmUninstall = "" }
+          }
+          Item {
+            // A setting of the engine above, not a third group: caption-sized,
+            // with a little air between it and the last engine row.
+            width: parent.width; height: ocrHeader.implicitHeight + Style.space(6)
+            visible: root.activeOcrEngine && root.activeOcrEngine.supportsConfidence === true
+            Text { id: ocrHeader; anchors.bottom: parent.bottom; text: "Confidence floor"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+            Text { anchors.right: parent.right; anchors.bottom: parent.bottom; text: root.confidenceValue > 0 ? root.confidenceValue + "%" : "keep everything"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption }
+          }
+          Row {
+            width: parent.width; spacing: 8
+            visible: root.activeOcrEngine && root.activeOcrEngine.supportsConfidence === true
+            Button { width: 32; text: "−"; bordered: true; focusable: true; onClicked: { var s = Math.max(0, root.confidenceValue - 5); root.confidenceOverride = s; controller.setConfig(".ocr.minConfidence", s) } }
+            PanelSlider {
+              id: confidenceSlider
+              width: parent.width - 80; bar: root.bar
+              minimum: 0; maximum: 95; step: 5; integer: true
+              value: root.confidenceValue
+              function snap(v) { return Math.round(v / 5) * 5 }
+              onMoved: function(v) { var s = confidenceSlider.snap(v); root.confidenceOverride = s; confidenceSlider.liveValue = s }
+              onReleased: function(v) {
+                var s = confidenceSlider.snap(v)
+                root.confidenceOverride = s
+                controller.setConfig(".ocr.minConfidence", s)
+              }
+            }
+            Button { width: 32; text: "+"; bordered: true; focusable: true; onClicked: { var s = Math.min(95, root.confidenceValue + 5); root.confidenceOverride = s; controller.setConfig(".ocr.minConfidence", s) } }
+          }
+          // One progress line for the tab: setup runs one engine at a time, speech
+          // or OCR, so the two groups never need a line each.
           Text {
             width: parent.width
             visible: controller.setupStarting || controller.setupJob.status === "running" || controller.setupJob.status === "starting" || controller.setupJob.status === "error"
@@ -741,7 +875,7 @@ Panel {
 
         // Voice ------------------------------------------------------------
         Column {
-          width: parent.width; spacing: Style.space(10); visible: !root.needsSetup && root.currentTab === 1 && !root.browsing
+          width: parent.width; spacing: Style.space(10); visible: !root.needsSetup && root.currentTabName === "Voice" && !root.browsing
           PanelSectionHeader { text: "Voice"; foreground: root.fg }
           Dropdown { id: voiceDropdown; width: parent.width; showLabel: false; foreground: root.fg; options: root.voiceOptions.length ? root.voiceOptions : [{ label: "No voice installed", value: "" }]; value: controller.info.voice || ""; onValueChanged: if (value && value !== controller.info.voice && value !== "No voice installed") controller.setConfig(controller.info.voicePath || ".piper.voice", value) }
           Button { width: parent.width; text: controller.info.voices?.length ? "Browse all voices" : "Download a voice"; iconText: "󰇚"; bordered: true; focusable: true; foreground: controller.info.voices?.length ? root.fg : Commons.Color.accent; visible: !root.activeProvider || root.activeProvider.voices === "downloadable"; onClicked: { root.browsing = true; root.voiceFilter = ""; controller.loadCatalogue() } }
@@ -805,7 +939,7 @@ Panel {
           }
         }
         Column {
-          width: parent.width; spacing: 8; visible: !root.needsSetup && root.currentTab === 1 && root.browsing
+          width: parent.width; spacing: 8; visible: !root.needsSetup && root.currentTabName === "Voice" && root.browsing
           Item {
             width: parent.width; height: browseHeader.implicitHeight
             PanelSectionHeader { id: browseHeader; text: root.installedCount + " installed · " + ((controller.catalogue || []).length - root.installedCount) + " available"; foreground: root.fg }
@@ -899,7 +1033,7 @@ Panel {
 
         // Text -------------------------------------------------------------
         Column {
-          width: parent.width; spacing: 8; visible: !root.needsSetup && root.currentTab === 2
+          width: parent.width; spacing: 8; visible: !root.needsSetup && root.currentTabName === "Text"
           PanelSectionHeader { text: "What gets spoken"; foreground: root.fg }
           Row {
             width: parent.width; spacing: 8
@@ -935,146 +1069,11 @@ Panel {
           Timer { id: previewDelay; interval: 180; onTriggered: controller.previewText(root.previewSource) }
         }
 
-        // Screen -----------------------------------------------------------
-        Column {
-          width: parent.width; spacing: 10; visible: !root.needsSetup && root.currentTab === 3
-          PanelSectionHeader { text: "Reading the screen"; foreground: root.fg }
-          Text { width: parent.width; wrapMode: Text.WordWrap
-                 text: "Captures are read on this computer and never leave it."
-                 color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-          Item {
-            width: parent.width; height: engineHeader.implicitHeight
-            PanelSectionHeader { id: engineHeader; text: "Recognition engine"; foreground: root.fg }
-          }
-          Component {
-            id: ocrRow
-            Rectangle {
-              required property var modelData
-              readonly property bool selected: modelData.name === (controller.info.ocr?.engine || "tesseract")
-              readonly property bool ready: modelData.status === "ready"
-              readonly property bool failing: modelData.status === "failing"
-              readonly property bool untested: modelData.status === "untested"
-              readonly property bool usable: ready || untested
-              function activateRow() { if (usable) controller.selectOcrEngine(modelData.name, untested) }
-              function activateAction() {
-                var row = this
-                if (row.failing && row.modelData.install) {
-                  root.ocrConfirmEngine = row.modelData.name
-                  root.ocrConfirmInstall = row.modelData.install
-                } else if (row.failing || row.untested) {
-                  controller.verifyOcrEngine(row.modelData.name)
-                } else {
-                  root.ocrConfirmEngine = row.modelData.name
-                  root.ocrConfirmInstall = row.modelData.install
-                }
-              }
-              width: parent ? parent.width : 0; height: engineCopy.implicitHeight + Style.space(12); radius: Style.space(6)
-              color: selected ? root.tint(0.10) : "transparent"; border.width: selected || activeFocus ? 1 : 0; border.color: activeFocus ? Commons.Color.accent : root.tint(0.45)
-              activeFocusOnTab: usable
-              Accessible.role: Accessible.RadioButton
-              Accessible.name: (modelData.title || modelData.name) + ", " + modelData.status
-              Accessible.checked: selected
-              Accessible.onPressAction: activateRow()
-              Keys.onSpacePressed: activateRow()
-              Keys.onReturnPressed: activateRow()
-              Keys.onEnterPressed: activateRow()
-              Column {
-                id: engineCopy; z: 1; anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; anchors.leftMargin: Style.space(8); anchors.rightMargin: Style.space(8); spacing: 2
-                Item {
-                  width: parent.width; height: engineName.implicitHeight
-                  Text { id: engineRadio; text: parent.parent.parent.selected ? "󰝥" : "󰝦"; color: parent.parent.parent.ready ? (parent.parent.parent.selected ? Commons.Color.accent : root.fg) : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
-                  Text { id: engineName; anchors.left: engineRadio.right; anchors.leftMargin: 8; textFormat: Text.PlainText; text: parent.parent.parent.modelData.title || parent.parent.parent.modelData.name; color: parent.parent.parent.usable ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
-                  Text { anchors.right: engineAction.visible ? engineAction.left : parent.right; anchors.rightMargin: engineAction.visible ? 8 : 0; anchors.verticalCenter: parent.verticalCenter
-                    text: { var d = parent.parent.parent
-                            if (d.failing) return "Not working"
-                            return d.ready ? "● Ready" : "" }
-                    color: { var d = parent.parent.parent; return d.failing ? Commons.Color.urgent : d.ready ? Commons.Color.accent : root.dim }
-                    font.family: root.ff; font.pixelSize: Style.font.caption
-                  }
-                  InlineAction {
-                    id: engineAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; visible: (!parent.parent.parent.ready && !parent.parent.parent.untested) || controller.verifying === "ocr:" + parent.parent.parent.modelData.name
-                    text: { var d = parent.parent.parent
-                            if (controller.verifying === "ocr:" + d.modelData.name) return "Testing…"
-                            if (d.failing && d.modelData.install) return "Repair"
-                            if (d.failing) return "Retry"
-                            return "Install" }
-                    color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
-                    onTriggered: parent.parent.parent.activateAction()
-                  }
-                }
-                InlineAction {
-                  anchors.right: parent.right
-                  visible: root.canUninstall(parent.parent.modelData)
-                  text: "󰆴"; Accessible.name: "Uninstall"; color: hovered || activeFocus ? Commons.Color.urgent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
-                  onTriggered: root.ocrConfirmUninstall = parent.parent.modelData.name
-                }
-                Text { width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText; text: parent.parent.modelData.desc || ""; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-                Text { visible: parent.parent.failing; width: parent.width; wrapMode: Text.WordWrap; text: "Installed, but it could not read the test image. Press Test to try again."; color: Commons.Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
-              }
-              MouseArea { anchors.fill: parent; enabled: parent.usable; z: 0; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
-            }
-          }
-          Column {
-            width: parent.width; spacing: Style.space(4)
-            Repeater { model: controller.info.ocr?.engines || []; delegate: ocrRow }
-          }
-          EngineConfirm {
-            width: parent.width
-            target: root.ocrConfirmInstall !== "" ? ((controller.info.ocr?.engines || []).find(function(e) { return e.name === root.ocrConfirmEngine }) || null) : null
-            foreground: root.fg; fontFamily: root.ff
-            onCancelled: { root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
-            onConfirmed: { controller.installProvider(root.ocrConfirmEngine); root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
-          }
-          EngineConfirm {
-            mode: "uninstall"
-            width: parent.width
-            target: root.ocrConfirmUninstall !== "" ? ((controller.info.ocr?.engines || []).find(function(e) { return e.name === root.ocrConfirmUninstall }) || null) : null
-            activeName: controller.info.ocr?.engine || ""
-            inUseWarning: "This is the OCR engine in use. Pick another one afterwards or screen reading will stop."
-            foreground: root.fg; fontFamily: root.ff
-            onCancelled: root.ocrConfirmUninstall = ""
-            onConfirmed: function(uninstallTarget) { controller.uninstall(uninstallTarget); root.ocrConfirmUninstall = "" }
-          }
-          Text {
-            width: parent.width
-            visible: controller.setupStarting || controller.setupJob.status === "running" || controller.setupJob.status === "starting" || controller.setupJob.status === "error"
-            textFormat: Text.PlainText
-            text: controller.setupStarting ? "Starting setup safely…" : controller.setupJob.message; wrapMode: Text.WordWrap
-            color: controller.setupJob.status === "error" ? Commons.Color.urgent : root.dim
-            font.family: root.ff; font.pixelSize: Style.font.caption
-          }
-          Item {
-            width: parent.width; height: ocrHeader.implicitHeight
-            visible: root.activeOcrEngine && root.activeOcrEngine.supportsConfidence === true
-            PanelSectionHeader { id: ocrHeader; text: "Confidence floor"; foreground: root.fg }
-            Text { anchors.right: parent.right; text: root.confidenceValue > 0 ? root.confidenceValue + "%" : "keep everything"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption }
-          }
-          Row {
-            width: parent.width; spacing: 8
-            visible: root.activeOcrEngine && root.activeOcrEngine.supportsConfidence === true
-            Button { width: 32; text: "−"; bordered: true; focusable: true; onClicked: { var s = Math.max(0, root.confidenceValue - 5); root.confidenceOverride = s; controller.setConfig(".ocr.minConfidence", s) } }
-            PanelSlider {
-              id: confidenceSlider
-              width: parent.width - 80; bar: root.bar
-              minimum: 0; maximum: 95; step: 5; integer: true
-              value: root.confidenceValue
-              function snap(v) { return Math.round(v / 5) * 5 }
-              onMoved: function(v) { var s = confidenceSlider.snap(v); root.confidenceOverride = s; confidenceSlider.liveValue = s }
-              onReleased: function(v) {
-                var s = confidenceSlider.snap(v)
-                root.confidenceOverride = s
-                controller.setConfig(".ocr.minConfidence", s)
-              }
-            }
-            Button { width: 32; text: "+"; bordered: true; focusable: true; onClicked: { var s = Math.min(95, root.confidenceValue + 5); root.confidenceOverride = s; controller.setConfig(".ocr.minConfidence", s) } }
-          }
-        }
-
         // Languages --------------------------------------------------------
-        // Engine and languages are separate tabs for the same reason Provider
+        // Engine and languages are separate tabs for the same reason Providers
         // and Voice are: one is a choice made once, the other is browsed.
         Column {
-          width: parent.width; spacing: 10; visible: !root.needsSetup && root.currentTab === 4
+          width: parent.width; spacing: 10; visible: !root.needsSetup && root.currentTabName === "Languages"
           Item {
             width: parent.width; height: langHeader.implicitHeight
             PanelSectionHeader { id: langHeader; text: "Languages for " + (root.activeOcrEngine ? (root.activeOcrEngine.title || root.activeOcrEngine.name) : (controller.info.ocr?.engine || "tesseract")); foreground: root.fg }
@@ -1162,7 +1161,7 @@ Panel {
 
         // Keys -------------------------------------------------------------
         Column {
-          width: parent.width; spacing: 6; visible: !root.needsSetup && root.currentTab === 5
+          width: parent.width; spacing: 6; visible: !root.needsSetup && root.currentTabName === "Keys"
           Item {
             width: parent.width; height: keysHeader.implicitHeight
             PanelSectionHeader { id: keysHeader; text: "Keybindings"; foreground: root.fg }
