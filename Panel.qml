@@ -265,6 +265,35 @@ Panel {
   }
   readonly property int prompterPx: Style.fontPx(1.25)
   function playSample() { if (!root.voiceMissing && root.sampleText.trim() !== "") controller.speak(root.sampleText) }
+  // The shell's Dropdown always drops its list below the field. The voice
+  // picker is the last thing on the Overview, and the panel can rest on the
+  // bar, so the list ran past the panel's edge. Find the dropdown's popup and
+  // open it upward when there is more room above; if the shell's dropdown
+  // ever stops exposing a popup this way, it simply keeps opening downward.
+  property var voicePopup: null
+  function findPopup(item) {
+    var kids = item ? item.children : []
+    for (var i = 0; i < kids.length; i++) {
+      var data = kids[i].data || []
+      for (var j = 0; j < data.length; j++)
+        if (data[j] && data[j].closePolicy !== undefined && data[j].opened !== undefined) return data[j]
+      var deeper = root.findPopup(kids[i])
+      if (deeper) return deeper
+    }
+    return null
+  }
+  function openUpwardWhenCramped(dropdown) {
+    var popup = root.findPopup(dropdown)
+    if (!popup || !popup.parent) return
+    var anchor = popup.parent, gap = Style.spacing.xxs
+    popup.y = Qt.binding(function() {
+      var top = anchor.mapToItem(root, 0, 0).y
+      var below = root.height - top - anchor.height
+      var needed = popup.height + gap
+      return below < needed && top > below ? -needed : anchor.height + gap
+    })
+    root.voicePopup = popup
+  }
   function openCatalogue() { root.browsing = true; root.voiceFilter = ""; controller.loadCatalogue() }
   // One speed control serves both cases: idle it is a setting, while reading
   // it also asks the backend to retune the utterance already playing.
@@ -885,6 +914,7 @@ Panel {
               showLabel: false; foreground: root.fg
               options: root.voiceOptions; value: controller.info.voice || ""
               onValueChanged: if (value && value !== controller.info.voice) controller.setConfig(controller.info.voicePath || ".piper.voice", value)
+              Component.onCompleted: root.openUpwardWhenCramped(voiceDropdown)
             }
             Button {
               id: browseVoices

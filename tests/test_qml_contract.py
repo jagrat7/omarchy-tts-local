@@ -259,6 +259,10 @@ class QmlContractTests(unittest.TestCase):
         self.assertIn("id: voiceDropdown", overview)
         self.assertNotIn("maxCharsField", overview)
         self.assertIn("id: maxCharsField", text_tab)
+        # The picker sits at the panel's bottom edge, so its list opens upward
+        # when there is more room above than below.
+        self.assertIn("Component.onCompleted: root.openUpwardWhenCramped(voiceDropdown)", overview)
+        self.assertIn("return below < needed && top > below ? -needed : anchor.height + gap", self.panel)
         self.assertIn('"Open Providers', self.panel)
 
     def test_speed_goes_live_while_speaking_and_keeps_the_override(self):
