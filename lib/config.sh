@@ -69,7 +69,7 @@ tts_config_init_unlocked() {
     if ! cat >"$tmp" <<'JSON'
 {
   "schemaVersion": 6,
-  "provider": "piper",
+  "provider": "kokoro_onnx",
   "rate": 1.0,
   "maxChars": 0,
   "piper": { "voice": "en_US-amy-medium" },

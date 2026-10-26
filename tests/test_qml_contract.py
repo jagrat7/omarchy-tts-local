@@ -294,6 +294,15 @@ class QmlContractTests(unittest.TestCase):
         for name in ("function togglePause()", "function setLiveRate(rate)", 'readonly property bool paused: status === "paused"'):
             self.assertIn(name, self.controller)
 
+class FirstRunContractTests(unittest.TestCase):
+    def test_kokoro_failure_offers_piper_unless_the_cpu_is_the_cause(self):
+        wizard = (ROOT / "components" / "FirstRunWizard.qml").read_text()
+        self.assertIn('controller.setupJob.code === "cpu_unsupported"', wizard)
+        self.assertIn("visible: root.kokoroFailed && !root.cpuUnsupported && !root.busy", wizard)
+        self.assertIn('root.controller.selectProvider("piper", false); root.controller.startSetup("piper")', wizard)
+        self.assertIn('root.controller.startSetup("recommended")', wizard)
+
+
 class ProcessExitContractTests(unittest.TestCase):
     def test_every_controller_exit_handler_ignores_killed_runs(self):
         """restart() kills an in-flight process; its non-zero exit is not a

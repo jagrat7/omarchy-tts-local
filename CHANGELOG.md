@@ -5,6 +5,13 @@ Versioning.
 
 ## Unreleased
 
+- Kokoro ONNX on the CPU is the default provider and what first-run setup
+  installs; Piper is the lighter fallback. Setup checks the processor before
+  downloading anything and names what's missing when it can't run the engines
+  (x86-64 with SSE4.2). If Kokoro installs but can't speak, the first-run
+  screen explains and offers Use Piper instead, except when the processor is
+  the cause, since Piper needs the same features. Existing configs keep their
+  provider.
 - Preferences tab (was Text): a Text section with the sanitizer rules and a
   compact length-limit stepper, and a Screen section holding the OCR
   confidence floor, which moved off Providers. Providers now lists engines

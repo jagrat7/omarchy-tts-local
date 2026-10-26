@@ -33,9 +33,10 @@ you drag. Speech (Piper or Kokoro) and OCR (Tesseract or EasyOCR) run locally.
 omarchy plugin add https://github.com/jagrat7/omarchy-tts-local.git --enable
 ```
 
-Click the speaker icon in the bar. The first-run screen installs Piper and one
-voice (about 230 MB). Shortcuts are set up from the Keys tab, and Kokoro from
-the Providers tab.
+Click the speaker icon in the bar. The first-run screen installs Kokoro, which
+runs on the CPU (about 480 MB). If Kokoro can't run on this computer, the
+screen says why and offers Piper instead. Shortcuts are set up from the Keys
+tab, and other providers from the Providers tab.
 
 <details>
 <summary>Upgrading from <code>io.github.hikari112.tts</code> or an older build</summary>
@@ -66,9 +67,22 @@ the selection or stop.
 
 | Provider | Download | Notes |
 |----------|----------|-------|
-| Piper | ~230 MB, ~60 MB per extra voice | Default. 170+ voices in 50+ languages |
-| Kokoro ONNX | ~480 MB CPU, ~2.3 GB GPU | GPU needs NVIDIA |
+| Kokoro ONNX | ~480 MB CPU, ~2.3 GB GPU | **Default and recommended.** Natural voices on the CPU, 27 English voices (American and British). The GPU option needs NVIDIA |
+| Piper | ~230 MB, ~60 MB per extra voice | The fallback for weaker PCs and for languages other than English. 170+ voices in 50+ languages |
 | Kokoro PyTorch | ~6 GB | Same voices, several seconds to start each time |
+
+**What runs it.** Both engines need a 64-bit Intel or AMD processor with
+SSE4.2: Intel from about 2009 (first-generation Core i3/i5/i7) and AMD from
+about 2011 (Bulldozer, then every Ryzen). ARM computers aren't supported yet.
+Setup checks this before downloading anything and says plainly if the
+processor can't run them.
+
+**Which to pick.** Kokoro's speed depends on how fast a single CPU core is,
+not on how many cores there are. Any desktop Core i5 or Ryzen 5 from the last
+several years makes speech several times faster than it plays. Low-power
+Celeron, Pentium N-series and Atom chips may pause between sentences, so use
+Piper there. Piper is also the choice when disk space is tight or you want a language
+other than English.
 
 Kokoro ONNX stays loaded for 10 idle minutes. Set
 `speak --set .kokoro_onnx.keepWarm 0` to disable that. A provider is marked

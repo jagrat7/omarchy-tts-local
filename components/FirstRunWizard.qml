@@ -15,6 +15,9 @@ Rectangle {
   border.width: 1
   border.color: Commons.Color.popups.border
 
+  readonly property bool failed: controller.setupJob.status === "error"
+  readonly property bool cpuUnsupported: failed && controller.setupJob.code === "cpu_unsupported"
+  readonly property bool kokoroFailed: failed && ["recommended", "kokoro_onnx", "kokoro_onnx_cpu"].indexOf(controller.setupJob.target || "") >= 0
   readonly property bool busy: controller.setupStarting
                                || controller.setupJob.status === "starting"
                                || controller.setupJob.status === "running"
@@ -35,8 +38,8 @@ Rectangle {
       width: parent.width
       wrapMode: Text.WordWrap
       text: root.controller.setup.ready
-        ? "The recommended local voice is ready. Text stays on this computer."
-        : "Set up a natural local voice with one click. The engine and voice are kept inside the plugin’s data folder, and highlighted text never leaves this computer."
+        ? "The local voice is ready. Text stays on this computer."
+        : "Set up Kokoro, a natural local voice that runs on the CPU (about 480 MB). The engine and voices are kept inside the plugin’s data folder, and highlighted text never leaves this computer."
       color: Commons.Color.muted
       font.family: Style.font.family
       font.pixelSize: Style.font.body
@@ -66,15 +69,37 @@ Rectangle {
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
     }
-    Row {
+    // When Kokoro could not be set up for a reason Piper might not share
+    // (a failed download, a voice that would not speak), offer the lighter
+    // engine. A processor that cannot run the engines at all gets no offer:
+    // Piper needs the same processor features.
+    Text {
+      width: parent.width
+      visible: root.kokoroFailed && !root.cpuUnsupported
+      wrapMode: Text.WordWrap
+      text: "Piper is lighter and works on more computers, with simpler voices."
+      color: Commons.Color.muted
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+    // Wraps rather than clipping when a failure adds a third button.
+    Flow {
+      width: parent.width
       spacing: Style.space(8)
       Button {
-        text: root.controller.setup.ready ? "Continue" : (root.controller.setupJob.status === "error" ? "Try again" : "Set up local voice")
+        visible: !root.cpuUnsupported
+        text: root.controller.setup.ready ? "Continue" : (root.controller.setupJob.status === "error" ? "Try again" : "Set up Kokoro")
         iconText: root.controller.setup.ready ? "󰄬" : "󰐊"
         bordered: true; focusable: true
         foreground: Commons.Color.accent
         enabled: !root.busy
         onClicked: root.controller.setup.ready ? root.skipped() : root.controller.startSetup("recommended")
+      }
+      Button {
+        visible: root.kokoroFailed && !root.cpuUnsupported && !root.busy
+        text: "Use Piper instead"
+        bordered: true; focusable: true
+        onClicked: { root.controller.selectProvider("piper", false); root.controller.startSetup("piper") }
       }
       Button {
         visible: root.controller.setupCancellable

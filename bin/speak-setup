@@ -78,6 +78,38 @@ HEALTH_MAX_BYTES = 1_048_576
 SETUP_LOCK_FD_ENV = "OMARCHY_TTS_SETUP_LOCK_FD"
 
 
+class CpuUnsupported(RuntimeError):
+    """The processor cannot run the pinned engines at all, so no other local
+    engine would fare better and the panel should not offer one."""
+
+
+# The engines' pinned NumPy wheels are built for x86-64-v2, so a CPU without
+# these flags fails on import with an illegible NumPy error. Checking first
+# turns that into a plain sentence before anything is downloaded.
+X86_64_V2_FLAGS = ("cx16", "lahf_lm", "popcnt", "sse4_1", "sse4_2", "ssse3")
+CPU_UNSUPPORTED = ("This computer's processor can't run the local speech engines. "
+                   "They need a 64-bit Intel or AMD processor from about 2009 or "
+                   "later (x86-64 with SSE4.2)")
+
+
+def check_cpu(cpuinfo: str | None = None, machine: str | None = None) -> None:
+    machine = machine or os.uname().machine
+    if machine != "x86_64":
+        raise CpuUnsupported(f"{CPU_UNSUPPORTED}; this one is {machine}.")
+    if cpuinfo is None:
+        try:
+            cpuinfo = Path("/proc/cpuinfo").read_text()
+        except OSError:
+            return      # unreadable: let the install and its proof decide
+    flags = next((line.split(":", 1)[1].split() for line in cpuinfo.splitlines()
+                  if line.startswith("flags")), None)
+    if flags is None:
+        return
+    missing = [flag for flag in X86_64_V2_FLAGS if flag not in flags]
+    if missing:
+        raise CpuUnsupported(f"{CPU_UNSUPPORTED}; this one lacks {', '.join(missing)}.")
+
+
 class SetupCancelled(Exception):
     """Raised from the worker's signal handler so transactions can roll back."""
 
@@ -257,9 +289,16 @@ def status() -> dict:
     except (OSError, ValueError, TypeError, AttributeError,
             subprocess.TimeoutExpired):
         pass
+    # Kokoro is what the recommended setup installs; Piper still counts, so an
+    # install from before Kokoro became the default is not sent back to setup.
+    kokoro_ready = any(engine_built_from_lock(name)
+                       and nonempty_file(ENGINE / name / "models" / "kokoro-v1.0.onnx")
+                       and nonempty_file(ENGINE / name / "models" / "voices-v1.0.bin")
+                       for name in ("kokoro_onnx", "kokoro_onnx_gpu"))
     return {
         "ok": True,
-        "ready": engine_ready and voice_ready,
+        "ready": kokoro_ready or (engine_ready and voice_ready),
+        "kokoroReady": kokoro_ready,
         "engineReady": engine_ready,
         "voiceReady": voice_ready,
         "bindingsReady": bindings,
@@ -672,11 +711,13 @@ def prove(target: str) -> None:
     """
     if target.startswith(LANGUAGE_PREFIX):
         return          # a language pack has no speech of its own to prove
-    provider = {"recommended": "piper", "kokoro_onnx_gpu": "kokoro_onnx"}.get(target, target)
+    provider = {"recommended": "kokoro_onnx", "kokoro_onnx_gpu": "kokoro_onnx"}.get(target, target)
     speak = Path(__file__).resolve().parent / "speak"
     if not speak.exists():
         return
     ocr = target in OCR_ENGINES
+    title = {"kokoro_onnx": "Kokoro", "kokoro": "Kokoro (PyTorch)", "piper": "Piper",
+             "tesseract": "Tesseract", "easyocr": "EasyOCR"}.get(provider, provider)
     write_state("running", "verify", 90, "Checking it can read" if ocr else "Checking it can speak")
     try:
         subprocess.run([str(speak), "--verify-ocr" if ocr else "--verify", provider],
@@ -685,12 +726,28 @@ def prove(target: str) -> None:
     except subprocess.CalledProcessError as exc:
         verb = "read" if ocr else "speak"
         detail = (exc.stderr or exc.stdout or "").strip()[-800:]
+        if "X86_V2" in detail or "baseline optimizations" in detail:
+            raise CpuUnsupported(f"{CPU_UNSUPPORTED}.") from exc
         raise RuntimeError(
-            f"{provider} installed but could not {verb}; "
+            f"{title} installed but could not {verb}; "
             + (detail or "it is marked as not working")
         ) from exc
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError(f"{provider} installed but did not respond in time") from exc
+        raise RuntimeError(f"{title} installed but did not respond in time") from exc
+
+
+def select_provider(name: str, *, device: str | None = None) -> None:
+    """Point the config at what the recommended setup just proved, through
+    speak's own validated writer rather than editing the file here."""
+    speak = Path(__file__).resolve().parent / "speak"
+    if not speak.exists():
+        return
+    writes = [(".provider", name)]
+    if device is not None:
+        writes.insert(0, (".kokoro_onnx.device", device))
+    for path, value in writes:
+        subprocess.run([str(speak), "--set", path, value], timeout=30,
+                       capture_output=True, text=True, check=True)
 
 
 def remove_path(path: Path) -> None:
@@ -848,7 +905,15 @@ def worker(target: str) -> int:
     try:
         write_state("running", "prepare", 2, "Preparing setup", target=target)
         try:
-            if target in ("recommended", "piper"):
+            if not target.startswith(LANGUAGE_PREFIX):
+                check_cpu()
+            if target == "recommended":
+                # Kokoro on the CPU: the most natural voice that runs on any
+                # supported PC without a GPU. Piper stays the lighter fallback.
+                install_engine_transaction(
+                    "kokoro_onnx", lambda staging: build_kokoro_onnx(staging, gpu=False))
+                select_provider("kokoro_onnx", device="cpu")
+            elif target == "piper":
                 install_engine_transaction("piper", build_piper,
                                            after_activate=install_voice)
             elif target == "kokoro":
@@ -874,6 +939,9 @@ def worker(target: str) -> int:
             write_state("cancelled", "cancelled", 0, "Cancelled",
                         pid=0, processIdentity="", cancellable=False)
             return 130
+        except CpuUnsupported as exc:
+            write_state("error", "failed", 0, str(exc), retryable=False, code="cpu_unsupported")
+            return 1
         except Exception as exc:  # boundary: convert backend failures to UI state
             write_state("error", "failed", 0, str(exc), retryable=True)
             return 1
