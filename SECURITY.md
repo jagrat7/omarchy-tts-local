@@ -2,28 +2,19 @@
 
 Please [report vulnerabilities privately](https://github.com/jagrat7/omarchy-tts-local/security/advisories/new)
 through GitHub Security Advisories. Do not include selected text, clipboard
-contents, or screenshots in a report.
+contents, or screenshots in a report. Only the latest release is supported.
 
-The project supports the latest release. Speech and OCR run on this computer:
-no bundled provider or engine sends selected text or captures anywhere, and no
-API keys are used or stored. The network is used only for explicit installs
-and downloads (engines, models, Piper voices), each pinned and verified as
-described below. Diagnostic output intentionally excludes spoken and selected
-text. Opening the settings panel is a local-only operation.
+## What the plugin touches
 
-Public speech input is capped at 1 MiB and captured images at 50 MiB before
-provider or OCR processing. Piper catalogue entries, models, and sidecars have
-independent size bounds; downloads are published only after exact-size and
-available digest verification.
-
-Configuration, runtime ownership, health, setup journals, and job
-state use private permissions and atomic replacement. Runtime directories must
-be owned by the current user and cannot be symlinks. Config symlink targets are
-preserved deliberately, dangling targets are rejected, and interrupted engine
-or voice replacement is recovered transactionally on the next operation.
-
-The active utterance keeps at most 4096 sanitized characters in a mode 0600
-file in the private runtime directory. Stop and normal completion remove it.
+- **Your text and screen**: selections, the clipboard and captures are read
+  and processed on this computer only. Text input is capped at 1 MiB and
+  images at 50 MiB. The current utterance (at most 4096 characters) is kept
+  in a mode 0600 file in the private runtime directory and removed on Stop or
+  completion. Diagnostic output never includes spoken or selected text.
+- **The network**: only for installs and downloads you start (engines,
+  models, Piper voices), each pinned and verified as described below.
+- **Root**: `pkexec` runs `pacman` only to install `uv` or
+  `tesseract-data-*` packages, and only after an explicit click.
 
 ## Supply chain
 
@@ -42,26 +33,22 @@ by the reviewed commit:
   Kokoro and Piper files come from one immutable repository revision; EasyOCR
   archives come from fixed GitHub release-asset URLs, whose content is bound
   by the shipped digest (a re-uploaded asset fails closed). Downloads that do
-  not match are discarded; files are verified again before every load; library
-  downloaders are never enabled and the Hugging Face hub client runs offline.
+  not match are discarded; library downloaders are never enabled and the
+  Hugging Face hub client runs offline.
 - **Engines from earlier releases**: each environment records the digest of
-  the lock that built it; probes, status and the engines themselves treat an
-  environment without this release's digest as not installed.
+  the lock that built it; an environment without this release's digest is
+  treated as not installed.
 - **Privilege boundary**: `pkexec` and `pacman` are used at fixed canonical
   paths, verified root-owned and unwritable by others up to `/`, immediately
-  before each call. Only `uv` and `tesseract-data-*` packages are ever
-  installed this way, and only after an explicit click.
+  before each call.
 
-Residual trust roots, stated so they can be judged: `uv` is used only at
-`/usr/bin/uv` from the distribution's repository (installed through the
-privileged path if absent), runs with `--no-config` and without `UV_*`/`PIP_*`
-overrides, and provides the Python 3.12 interpreter - one already on the
-system or a python-build-standalone build it downloads and verifies against
-checksums compiled into `uv`; a distribution-installed `piper` on `PATH` is
-accepted when no managed engine exists; hash-locked wheels come from PyPI and
-model artefacts from GitHub and Hugging Face, but every one of those is bound
-by a digest in this repository, so those services can withhold a file, never
-substitute one.
+Residual trust roots: `uv` is used only at `/usr/bin/uv` from the
+distribution's repository, runs with `--no-config` and without `UV_*`/`PIP_*`
+overrides, and provides the Python 3.12 interpreter (the system's, or a
+python-build-standalone build verified against checksums compiled into `uv`).
+A distribution-installed `piper` on `PATH` is accepted when no managed engine
+exists. PyPI, GitHub and Hugging Face can withhold a file but never substitute
+one, since every artefact is bound by a digest in this repository.
 
 `tools/pin-engines` and `tools/pin-piper-voices` regenerate these files so a
 bump is a reviewable diff, and CI proves the locks apply and reproduce.
