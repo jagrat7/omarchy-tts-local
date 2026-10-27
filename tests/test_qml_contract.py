@@ -12,6 +12,16 @@ class QmlContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.panel = (ROOT / "Panel.qml").read_text()
+        # One component per tab body; the panel instantiates and shows them.
+        cls.overview = (ROOT / "components" / "OverviewTab.qml").read_text()
+        cls.browser = (ROOT / "components" / "VoiceBrowser.qml").read_text()
+        cls.providers = (ROOT / "components" / "ProvidersTab.qml").read_text()
+        cls.prefs = (ROOT / "components" / "PreferencesTab.qml").read_text()
+        cls.languages = (ROOT / "components" / "LanguagesTab.qml").read_text()
+        cls.keys = (ROOT / "components" / "KeysTab.qml").read_text()
+        # Everything the panel shows, for contracts that hold across files.
+        cls.ui = "\n".join([cls.panel, cls.overview, cls.browser, cls.providers,
+                            cls.prefs, cls.languages, cls.keys])
         cls.controller = (ROOT / "components" / "TtsController.qml").read_text()
         cls.wizard = (ROOT / "components" / "FirstRunWizard.qml").read_text()
         cls.inline_action = (ROOT / "components" / "InlineAction.qml").read_text()
@@ -33,11 +43,12 @@ class QmlContractTests(unittest.TestCase):
         component = (ROOT / "components" / "EngineConfirm.qml").read_text()
         self.assertIn("target.installInfo", component)
         # Install and uninstall, for speech and for OCR, all use it.
-        self.assertEqual(self.panel.count("EngineConfirm {"), 4)
-        self.assertEqual(self.panel.count('mode: "uninstall"'), 2)
+        self.assertEqual(self.ui.count("EngineConfirm {"), 4)
+        self.assertEqual(self.providers.count("EngineConfirm {"), 4)
+        self.assertEqual(self.ui.count('mode: "uninstall"'), 2)
         # Sizes live in engine headers, not in the panel.
-        self.assertNotIn("2.3 GB", self.panel)
-        self.assertNotIn("About 6 GB", self.panel)
+        self.assertNotIn("2.3 GB", self.ui)
+        self.assertNotIn("About 6 GB", self.ui)
 
     def test_setup_cancel_requires_registered_worker_identity(self):
         self.assertIn("readonly property bool setupCancellable", self.controller)
@@ -51,16 +62,16 @@ class QmlContractTests(unittest.TestCase):
     def test_variant_slider_holds_only_installed_variants(self):
         # Variants share a row by `# family:`; the slider lists what is
         # installed, appears only with a choice to make, and + lists the rest.
-        self.assertIn("Repeater { model: root.providerEntries; delegate: providerRow }", self.panel)
-        start = self.panel.index("SegmentedControl {")
-        slider = self.panel[start:self.panel.index("}", self.panel.index("onSelected", start))]
+        self.assertIn("Repeater { model: root.providerEntries; delegate: providerRow }", self.providers)
+        start = self.providers.index("SegmentedControl {")
+        slider = self.providers[start:self.providers.index("}", self.providers.index("onSelected", start))]
         self.assertIn("entry.installed.map", slider)
         self.assertIn("entry.selected && entry.installed.length > 1", slider)
-        self.assertIn("model: entry.adding ? entry.available : []", self.panel)
-        self.assertIn("readonly property bool showAdd: isFamily && available.length > 0", self.panel)
+        self.assertIn("model: entry.adding ? entry.available : []", self.providers)
+        self.assertIn("readonly property bool showAdd: isFamily && available.length > 0", self.providers)
 
     def test_variant_install_is_offered_only_after_its_own_job_finishes(self):
-        watcher = self.panel[self.panel.index("function onSetupJobChanged()"):]
+        watcher = self.providers[self.providers.index("function onSetupJobChanged()"):]
         watcher = watcher[:watcher.index("\n    }\n")]
         self.assertIn("root.pendingSeen = true", watcher)
         self.assertIn('status === "done" && !root.pendingSeen', watcher)
@@ -77,16 +88,21 @@ class QmlContractTests(unittest.TestCase):
         self.assertNotIn('"Screen"', tab_line)
         # Screen reading on Providers is engines only; its preference lives on
         # the Preferences tab, and the privacy note is gone from the header.
-        providers = self.panel[self.panel.index("// Providers: speech ----"):self.panel.index("// Text ----")]
-        self.assertNotIn("confidenceSlider", providers)
-        self.assertNotIn("Captures stay on this computer", self.panel)
+        self.assertIn('PanelSectionHeader { id: providerHeader; text: "Speech"', self.providers)
+        self.assertIn('PanelSectionHeader { id: engineHeader; text: "Screen reading"', self.providers)
+        self.assertNotIn("confidenceSlider", self.providers)
+        self.assertNotIn("Captures stay on this computer", self.ui)
         # Sections and shortcuts follow the list, so a later tab change cannot
         # leave a stale index or a dead number key behind.
-        self.assertIsNone(re.search(r"currentTab === \d", self.panel))
-        self.assertEqual(self.panel.count('root.currentTabName === "Providers"'), 2)
+        self.assertIsNone(re.search(r"currentTab === \d", self.ui))
+        for name in ("Overview", "Providers", "Preferences", "Languages", "Keys"):
+            self.assertIn('root.currentTabName === "%s"' % name, self.panel)
+        self.assertEqual(self.panel.count('root.currentTabName === "Providers"'), 1)
+        self.assertNotIn("currentTabName ===", "\n".join([self.overview, self.browser, self.providers,
+                                                         self.prefs, self.languages, self.keys]))
         self.assertIn("event.key < Qt.Key_1 + tabCount", self.panel)
         # The two groups share one setup progress line.
-        self.assertEqual(self.panel.count("controller.setupJob.message"), 1)
+        self.assertEqual(self.ui.count("controller.setupJob.message"), 1)
 
     def test_panel_tab_navigation_enters_real_controls(self):
         self.assertIn("function moveTabFocus(direction)", self.panel)
@@ -96,11 +112,11 @@ class QmlContractTests(unittest.TestCase):
         self.assertIn("event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab", self.panel)
 
     def test_provider_actions_are_declared_by_backend_metadata(self):
-        start = self.panel.index(
-            "root.activeProvider && Number(root.activeProvider.maxBytes || 0) > 0"
+        start = self.prefs.index(
+            "panel.activeProvider && Number(panel.activeProvider.maxBytes || 0) > 0"
         )
-        caption = self.panel[start:self.panel.index("color: root.dim", start)]
-        self.assertIn("text: root.activeProvider", caption)
+        caption = self.prefs[start:self.prefs.index("color: panel.dim", start)]
+        self.assertIn("text: panel.activeProvider", caption)
         self.assertIn(': ""', caption)
 
     def test_retryable_controller_actions_clear_stale_errors(self):
@@ -130,7 +146,7 @@ class QmlContractTests(unittest.TestCase):
             line = next(line for line in self.controller.splitlines() if 'function ' + name in line)
             self.assertIn('error = ""', line)
             self.assertIn('playbackControl(', line)
-        self.assertIn('"pause", "snip"', self.panel)
+        self.assertIn('"pause", "snip"', self.keys)
 
     def test_duplicate_job_starts_reconnect_to_the_backend_owner(self):
         self.assertIn('result.code === "already_running"', self.controller)
@@ -152,7 +168,7 @@ class QmlContractTests(unittest.TestCase):
         # Only an explicit Browse/Download opens (and so fetches) the catalogue.
         self.assertIn("function openCatalogue() { root.browsing = true; root.voiceFilter = \"\"; controller.loadCatalogue() }",
                       self.panel)
-        self.assertEqual(self.panel.count("controller.loadCatalogue()"), 1)
+        self.assertEqual(self.ui.count("controller.loadCatalogue()"), 1)
 
     def test_config_refresh_waits_for_all_pending_writes(self):
         refresh = self.controller[self.controller.index("function refresh()"):
@@ -169,8 +185,8 @@ class QmlContractTests(unittest.TestCase):
             self.assertIn("Keys.onSpacePressed", source)
 
     def test_length_limit_is_bounded_in_the_panel(self):
-        self.assertIn("IntValidator { bottom: 0; top: 1048576 }", self.panel)
-        self.assertIn("Math.min(1048576", self.panel)
+        self.assertIn("IntValidator { bottom: 0; top: 1048576 }", self.prefs)
+        self.assertIn("Math.min(1048576", self.prefs)
 
     def test_first_run_counts_only_usable_providers(self):
         self.assertIn("readonly property bool hasUsableProvider", self.panel)
@@ -224,35 +240,36 @@ class QmlContractTests(unittest.TestCase):
 
     def test_user_content_is_never_auto_detected_as_rich_text(self):
         self.assertIn("textFormat: Text.PlainText", self.inline_action)
-        preview = self.panel[self.panel.index('text: controller.preview || "Spoken preview"') - 120:
-                             self.panel.index('text: controller.preview || "Spoken preview"') + 80]
+        preview = self.prefs[self.prefs.index('text: controller.preview || "Spoken preview"') - 120:
+                             self.prefs.index('text: controller.preview || "Spoken preview"') + 80]
         self.assertIn("textFormat: Text.PlainText", preview)
         error = self.panel[self.panel.index('visible: controller.error !== ""'):]
         self.assertIn("textFormat: Text.PlainText", error[:180])
-        self.assertIn("textFormat: TextEdit.PlainText", self.panel)
+        self.assertIn("textFormat: TextEdit.PlainText", self.overview)
+        self.assertIn("textFormat: TextEdit.PlainText", self.prefs)
 
 
 
     def test_overview_is_the_first_tab_and_navigation_follows_the_tab_list(self):
         self.assertIn('readonly property var tabNames: ["Overview", "Providers", "Preferences", "Languages", "Keys"]',
                       self.panel)
-        prefs = self.panel[self.panel.index("// Text ----"):self.panel.index("// Languages ----")]
+        prefs = self.prefs
         self.assertIn('PanelSectionHeader { text: "Text"', prefs)
         self.assertIn('PanelSectionHeader { text: "Screen"', prefs)
         self.assertIn("id: confidenceSlider", prefs)
         self.assertIn("id: maxCharsField", prefs)
         # A second click on the voice field closes its list instead of reopening it.
-        self.assertIn("popup.closePolicy = Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent", self.panel)
+        self.assertIn("popup.closePolicy = Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent", self.overview)
         self.assertIn("var tabCount = root.tabNames.length", self.panel)
-        self.assertNotRegex(self.panel, r"%\s*6\b")
-        self.assertNotIn("Qt.Key_6", self.panel)
+        self.assertNotRegex(self.ui, r"%\s*6\b")
+        self.assertNotIn("Qt.Key_6", self.ui)
         opened = self.panel[self.panel.index("onOpenedChanged:"):self.panel.index("function restoreFromInfo")]
         self.assertIn("currentTab = 0", opened)
 
     def test_teleprompter_hosts_the_sample_and_shows_plain_text(self):
-        self.assertNotIn("id: testButton", self.panel)
-        self.assertEqual(self.panel.count("id: sampleField"), 1)
-        overview = self.panel[self.panel.index("// Overview ----"):self.panel.index("// Providers: speech ----")]
+        self.assertNotIn("id: testButton", self.ui)
+        self.assertEqual(self.ui.count("id: sampleField"), 1)
+        overview = self.overview
         self.assertIn("id: sampleField", overview)
         self.assertIn("id: prompter", overview)
         phrase = overview[overview.index("delegate: Text {"):overview.index("Behavior on opacity")]
@@ -260,37 +277,39 @@ class QmlContractTests(unittest.TestCase):
         # The sample cannot be played with no voice, whoever supplies voices.
         self.assertIn("readonly property bool voiceMissing: controller.infoLoaded && root.voiceOptions.length === 0",
                       self.panel)
-        self.assertIn("if (!root.voiceMissing", self.panel)
+        self.assertIn("if (!panel.voiceMissing", overview)
         # With no voice the row stays one line and points at Providers (or the
         # catalogue when the engine downloads voices).
-        self.assertIn('else root.currentTab = root.tabNames.indexOf("Providers")', self.panel)
-        self.assertIn("visible: root.voiceMissing; color:", self.panel)
-        self.assertNotIn("voiceOpen", self.panel)
+        self.assertIn('else panel.currentTab = panel.tabNames.indexOf("Providers")', overview)
+        self.assertIn("visible: panel.voiceMissing; color:", overview)
+        self.assertNotIn("voiceOpen", self.ui)
         # The voice is picked inline; the length limit is a Text rule.
-        overview = self.panel[self.panel.index("// Overview ----"):self.panel.index("// Providers: speech ----")]
-        text_tab = self.panel[self.panel.index("// Text ----"):self.panel.index("// Languages ----")]
+        text_tab = self.prefs
         self.assertIn("id: voiceDropdown", overview)
         self.assertNotIn("maxCharsField", overview)
         self.assertIn("id: maxCharsField", text_tab)
         # The picker sits at the panel's bottom edge, so its list opens upward
         # when there is more room above than below.
         self.assertIn("Component.onCompleted: root.openUpwardWhenCramped(voiceDropdown)", overview)
-        self.assertIn("return below < needed && top > below ? -needed : anchor.height + gap", self.panel)
-        self.assertIn('"Open Providers', self.panel)
+        self.assertIn("return below < needed && top > below ? -needed : anchor.height + gap", overview)
+        # It measures against the whole panel, not the Overview alone.
+        self.assertIn("var top = anchor.mapToItem(panel, 0, 0).y", overview)
+        self.assertIn('"Open Providers', overview)
 
     def test_speed_goes_live_while_speaking_and_keeps_the_override(self):
-        apply = self.panel[self.panel.index("function applyRate"):self.panel.index("function clockText")]
+        apply = self.overview[self.overview.index("function applyRate"):self.overview.index("function clockText")]
         self.assertIn("root.rateOverride = s", apply)
         self.assertIn("controller.setLiveRate(s)", apply)
         self.assertIn("Math.max(root.rateMinimum, Math.min(root.rateMaximum", apply)
-        self.assertIn('controller.nowPlaying.canLiveRate ? "applies now" : "next reading"', self.panel)
+        self.assertIn('controller.nowPlaying.canLiveRate ? "applies now" : "next reading"', self.overview)
 
     def test_transport_controls_use_the_controller_playback_api(self):
         # The controller (and its tests) own the CLI flags and queueing; the
         # Overview only calls it, and only polls while the panel is open.
         self.assertIn("TtsController { id: controller; statusSource: root.hostWidget; panelOpen: root.opened }", self.panel)
         self.assertIn("controller.togglePause()", self.panel)
-        self.assertIn("controller.setLiveRate(s)", self.panel)
+        self.assertIn("controller.togglePause()", self.overview)
+        self.assertIn("controller.setLiveRate(s)", self.overview)
         for name in ("function togglePause()", "function setLiveRate(rate)", 'readonly property bool paused: status === "paused"'):
             self.assertIn(name, self.controller)
 

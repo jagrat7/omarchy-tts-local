@@ -17,7 +17,9 @@ remains independently useful and testable.
   private JSON stores only chord choices—labels, commands, and installation
   paths are always derived from the current plugin.
 - `components/TtsController.qml` is the async bridge from QML to those CLIs.
-- `Panel.qml` owns presentation and transient interaction state.
+- `Panel.qml` owns presentation and transient interaction state shared across
+  tabs; each tab's body is a component (`components/*Tab.qml`,
+  `VoiceBrowser.qml`) that also owns the state only it uses.
 
 QML uses argv arrays for user-controlled values. Shell interpretation is
 limited to a fixed allowlist handled by the graphical setup backend.
