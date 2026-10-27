@@ -5,6 +5,7 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "components"
+import "components/utils.js" as Utils
 
 Panel {
   id: root
@@ -36,18 +37,9 @@ Panel {
     autoVerified[p.name] = true
     controller.verifyProvider(p.name)
   }
-  readonly property var activeOcrEngine: {
-    var all = controller.info.ocr?.engines || []
-    for (var i = 0; i < all.length; ++i) if (all[i].name === (controller.info.ocr?.engine || "tesseract")) return all[i]
-    return null
-  }
+  readonly property var activeOcrEngine: Utils.byName(controller.info.ocr?.engines || [], controller.ocrEngine)
   property bool setupSkipped: false
-  readonly property bool hasUsableProvider: {
-    var all = controller.info.providers || []
-    for (var i = 0; i < all.length; ++i)
-      if (all[i].status === "ready" || all[i].status === "untested") return true
-    return false
-  }
+  readonly property bool hasUsableProvider: (controller.info.providers || []).some(Utils.isUsable)
   readonly property bool needsSetup: controller.infoLoaded && controller.setupLoaded
                                      && !controller.setup.ready
                                      && !hasUsableProvider && !setupSkipped
@@ -58,56 +50,11 @@ Panel {
   readonly property bool descendantControlActive: {
     var panelWindow = keyCatcher.Window.window
     var item = panelWindow ? panelWindow.activeFocusItem : null
-    return !!item && item !== keyCatcher && root.isInsideKeyCatcher(item)
+    return !!item && item !== keyCatcher && Utils.isInside(item, keyCatcher)
   }
 
-  function tint(a) { return Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, a) }
-  function keyName(event) {
-    var key = event.text ? event.text.toUpperCase() : ""
-    if (event.key === Qt.Key_BracketLeft) key = "BRACKETLEFT"
-    else if (event.key === Qt.Key_BracketRight) key = "BRACKETRIGHT"
-    else if (event.key === Qt.Key_Comma) key = "COMMA"
-    else if (event.key === Qt.Key_Period) key = "PERIOD"
-    else if (event.key === Qt.Key_Slash) key = "SLASH"
-    else if (event.key === Qt.Key_Backslash) key = "BACKSLASH"
-    else if (event.key === Qt.Key_Semicolon) key = "SEMICOLON"
-    else if (event.key === Qt.Key_Apostrophe) key = "APOSTROPHE"
-    else if (event.key === Qt.Key_Minus) key = "MINUS"
-    else if (event.key === Qt.Key_Equal) key = "EQUAL"
-    else if (event.key === Qt.Key_QuoteLeft) key = "GRAVE"
-    else if (event.key === Qt.Key_Space) key = "SPACE"
-    else if (event.key === Qt.Key_Tab) key = "TAB"
-    else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) key = "RETURN"
-    else if (event.key === Qt.Key_Backspace) key = "BACKSPACE"
-    else if (event.key === Qt.Key_Delete) key = "DELETE"
-    else if (event.key === Qt.Key_Left) key = "LEFT"
-    else if (event.key === Qt.Key_Right) key = "RIGHT"
-    else if (event.key === Qt.Key_Up) key = "UP"
-    else if (event.key === Qt.Key_Down) key = "DOWN"
-    else if (event.key >= Qt.Key_F1 && event.key <= Qt.Key_F35)
-      key = "F" + String(event.key - Qt.Key_F1 + 1)
-    else if (event.key === Qt.Key_Escape) key = "ESCAPE"
-    return key
-  }
-  function chordFromEvent(event) {
-    var parts = []
-    if (event.modifiers & Qt.MetaModifier) parts.push("SUPER")
-    if (event.modifiers & Qt.ControlModifier) parts.push("CTRL")
-    if (event.modifiers & Qt.AltModifier) parts.push("ALT")
-    if (event.modifiers & Qt.ShiftModifier) parts.push("SHIFT")
-    var key = keyName(event)
-    if (!key || key === "ESCAPE") return ""
-    parts.push(key)
-    return parts.join(" + ")
-  }
-  function isInsideKeyCatcher(item) {
-    var current = item
-    while (current) {
-      if (current === keyCatcher) return true
-      current = current.parent
-    }
-    return false
-  }
+  function tint(a) { return Utils.withAlpha(Commons.Color.accent, a) }
+  function cancelCapture() { root.captureAction = ""; root.capturedChord = "" }
   function moveTabFocus(direction) {
     var forward = direction >= 0
     var panelWindow = keyCatcher.Window.window
@@ -120,41 +67,13 @@ Panel {
     for (var i = 0; i < 128; ++i) {
       candidate = candidate.nextItemInFocusChain(forward)
       if (!candidate || candidate === current) break
-      if (candidate !== keyCatcher && root.isInsideKeyCatcher(candidate)) {
+      if (candidate !== keyCatcher && Utils.isInside(candidate, keyCatcher)) {
         candidate.forceActiveFocus(forward ? Qt.TabFocusReason : Qt.BacktabFocusReason)
         return
       }
     }
   }
-  readonly property var activeProvider: {
-    var all = controller.info.providers || []
-    for (var i = 0; i < all.length; ++i)
-      if (all[i].name === controller.info.provider) return all[i]
-    return null
-  }
-
-  // Voices are stored as filenames like "en_US-amy-medium". That is an
-  // identifier, not a name, and it is what the dropdown and the status line
-  // were showing. Providers whose voice names are already words - kokoro's
-  // af_heart - are left exactly as they are.
-  function titleCase(word) {
-    var w = String(word)
-    return w.length ? w.charAt(0).toUpperCase() + w.slice(1) : w
-  }
-
-  function voiceName(key) {
-    var parts = String(key).split("-")
-    if (parts.length >= 3 && /^[a-z]{2,3}_[A-Za-z]{2,4}$/.test(parts[0]))
-      return root.titleCase(parts[1].replace(/_/g, " "))
-    return String(key)
-  }
-
-  function voiceLabel(key) {
-    var parts = String(key).split("-")
-    if (parts.length >= 3 && /^[a-z]{2,3}_[A-Za-z]{2,4}$/.test(parts[0]))
-      return root.voiceName(key) + " · " + parts[0] + " · " + parts.slice(2).join("-")
-    return String(key)
-  }
+  readonly property var activeProvider: Utils.byName(controller.info.providers || [], controller.info.provider)
 
   // Playback --------------------------------------------------------------
   readonly property string playState: controller.status
@@ -178,65 +97,9 @@ Panel {
   // A string, so a poll that returns the same text does not rebuild the
   // prompter (an array would be a new value every time and reset the list).
   readonly property string promptText: String(controller.nowPlaying.text || "")
-  // Sentences, with any too long to read at a glance (OCR often has no
-  // punctuation at all) cut at a word boundary so each fits the screen.
-  readonly property var phrases: {
-    var text = root.promptText, out = [], start = 0
-    function push(end) {
-      var piece = text.slice(start, end), lead = piece.length - piece.replace(/^\s+/, "").length
-      var at = start + lead
-      piece = piece.trim()
-      while (piece.length > 160) {
-        var cut = piece.lastIndexOf(" ", 140)
-        if (cut < 60) cut = 140
-        out.push({ text: piece.slice(0, cut).trim(), start: at })
-        at += cut; piece = piece.slice(cut).replace(/^\s+/, function(m) { at += m.length; return "" })
-      }
-      if (piece.length) out.push({ text: piece, start: at })
-      start = end
-    }
-    for (var i = 0; i < text.length; ++i) {
-      var c = text.charAt(i)
-      if (c === "\n") { push(i + 1); continue }
-      if (".!?…".indexOf(c) < 0) continue
-      var j = i + 1
-      while (j < text.length && ".!?…\"'”’)]".indexOf(text.charAt(j)) >= 0) j++
-      if (j >= text.length || /\s/.test(text.charAt(j))) { push(j); i = j - 1 }
-    }
-    push(text.length)
-    return out
-  }
-  // Speech runs at an even pace closely enough to place the reader by the
-  // share of audio already played.
-  readonly property int phraseIndex: {
-    var list = root.phrases
-    if (!list.length) return 0
-    var at = root.promptText.length * root.npProgress, found = 0
-    for (var i = 0; i < list.length; ++i) if (list[i].start <= at) found = i
-    return found
-  }
-  // A provider addressed by filename (piper) sends plain keys and we make them
-  // readable here; one that lists {value, label} pairs names its own voices.
-  readonly property var voiceOptions: {
-    var list = controller.info.voices || [], out = []
-    for (var i = 0; i < list.length; ++i) {
-      var v = list[i]
-      if (v && typeof v === "object")
-        out.push({ label: String(v.label || v.value), value: String(v.value) })
-      else
-        out.push({ label: root.voiceLabel(v), value: String(v) })
-    }
-    return out
-  }
-
-  // What to call the active voice: the provider's own name for it if we were
-  // given one, otherwise the identifier tidied up.
-  function activeVoiceLabel() {
-    var opts = root.voiceOptions, current = String(controller.info.voice || "")
-    for (var i = 0; i < opts.length; ++i)
-      if (opts[i].value === current) return opts[i].label
-    return root.voiceName(current)
-  }
+  readonly property var phrases: Utils.splitPhrases(root.promptText)
+  readonly property int phraseIndex: Utils.phraseAt(root.phrases, root.promptText.length * root.npProgress)
+  readonly property var voiceOptions: Utils.voiceOptions(controller.info.voices || [])
 
   TtsController { id: controller; statusSource: root.hostWidget; panelOpen: root.opened }
   // The panel always opens on the Overview, the player for whatever is being
@@ -284,16 +147,14 @@ Panel {
         }
         if (event.key === Qt.Key_Escape) {
           if (overviewTab.voiceDropdown.popupOpen) overviewTab.voiceDropdown.close()
-          else if (root.captureAction !== "") {
-            root.captureAction = ""
-            root.capturedChord = ""
-          } else root.close()
+          else if (root.captureAction !== "") root.cancelCapture()
+          else root.close()
           event.accepted = true
           return
         }
         if (root.descendantControlActive) return
         if (root.captureAction !== "") {
-          var chord = root.chordFromEvent(event)
+          var chord = Utils.chordFromEvent(event)
           if (chord) root.capturedChord = chord
           event.accepted = true; return
         }
@@ -398,8 +259,8 @@ Panel {
             Text { text: "Press the new shortcut for “" + root.captureAction + "”"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.body }
             Text { text: root.capturedChord || "Waiting for keys…"; color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.subtitle }
             Row { spacing: 8
-              Button { text: "Cancel"; bordered: true; focusable: true; onClicked: { root.captureAction = ""; root.capturedChord = "" } }
-              Button { text: "Use shortcut"; bordered: true; focusable: true; enabled: root.capturedChord !== ""; foreground: Commons.Color.accent; onClicked: { controller.setBinding(root.captureAction, root.capturedChord); root.captureAction = ""; root.capturedChord = "" } }
+              Button { text: "Cancel"; bordered: true; focusable: true; onClicked: root.cancelCapture() }
+              Button { text: "Use shortcut"; bordered: true; focusable: true; enabled: root.capturedChord !== ""; foreground: Commons.Color.accent; onClicked: { controller.setBinding(root.captureAction, root.capturedChord); root.cancelCapture() } }
             }
           }
         }

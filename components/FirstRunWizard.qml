@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "utils.js" as Utils
 
 Rectangle {
   id: root
@@ -11,16 +12,14 @@ Rectangle {
   width: parent ? parent.width : implicitWidth
   height: content.implicitHeight + Style.space(24)
   radius: Style.space(8)
-  color: Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, 0.08)
+  color: Utils.withAlpha(Commons.Color.accent, 0.08)
   border.width: 1
   border.color: Commons.Color.popups.border
 
   readonly property bool failed: controller.setupJob.status === "error"
   readonly property bool cpuUnsupported: failed && controller.setupJob.code === "cpu_unsupported"
   readonly property bool kokoroFailed: failed && ["recommended", "kokoro_onnx", "kokoro_onnx_cpu"].indexOf(controller.setupJob.target || "") >= 0
-  readonly property bool busy: controller.setupStarting
-                               || controller.setupJob.status === "starting"
-                               || controller.setupJob.status === "running"
+  readonly property bool busy: controller.setupBusy
 
   Column {
     id: content
@@ -44,18 +43,11 @@ Rectangle {
       font.family: Style.font.family
       font.pixelSize: Style.font.body
     }
-    Rectangle {
+    ProgressLine {
       width: parent.width
       height: 6
-      radius: 3
       visible: root.busy
-      color: Commons.Color.popups.border
-      Rectangle {
-        height: parent.height
-        width: parent.width * Math.max(0.02, Math.min(1, root.controller.setupJob.progress / 100))
-        radius: parent.radius
-        color: Commons.Color.accent
-      }
+      percent: root.controller.setupJob.progress
     }
     Text {
       width: parent.width

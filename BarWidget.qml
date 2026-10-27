@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Io
 import qs.Ui
+import "components/utils.js" as Utils
 
 BarWidget {
   id: root
@@ -10,11 +11,7 @@ BarWidget {
   readonly property bool speaking: status !== "idle"
   property string provider: "piper"
 
-  function localPath(url) {
-    var value = String(url)
-    return value.indexOf("file://") === 0 ? decodeURIComponent(value.slice(7)) : value
-  }
-  readonly property string speakBin: localPath(Qt.resolvedUrl("bin/speak"))
+  readonly property string speakBin: Utils.localPath(Qt.resolvedUrl("bin/speak"))
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight

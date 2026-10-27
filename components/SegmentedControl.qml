@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Commons as Commons
+import "utils.js" as Utils
 
 // A row of equal pills with a highlight that slides to the chosen one, for
 // picking one of a few options (a provider's installed variants).
@@ -18,19 +19,18 @@ Rectangle {
     return -1
   }
   readonly property real pillWidth: (width - 4) / Math.max(1, options.length)
-  function tint(a) { return Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, a) }
 
   width: parent ? parent.width : implicitWidth
   implicitHeight: pills.implicitHeight + 4
   radius: Style.space(6)
-  color: Qt.rgba(foreground.r, foreground.g, foreground.b, 0.06)
+  color: Utils.withAlpha(foreground, 0.06)
 
   Rectangle {
     visible: root.currentIndex >= 0
     x: 2 + Math.max(0, root.currentIndex) * root.pillWidth; y: 2
     width: root.pillWidth; height: root.height - 4
     radius: Style.space(5)
-    color: root.tint(0.18); border.width: 1; border.color: root.tint(0.5)
+    color: Utils.withAlpha(Commons.Color.accent, 0.18); border.width: 1; border.color: Utils.withAlpha(Commons.Color.accent, 0.5)
     Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
   }
 

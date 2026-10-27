@@ -3,6 +3,7 @@ import QtQuick.Controls
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "utils.js" as Utils
 
 // Shortcuts for every action, written into Hyprland's bindings.lua.
 Column {
@@ -15,16 +16,8 @@ Column {
   signal captureRequested(string actionName, string chord)
 
   readonly property int adoptableCount: (controller.bindings.adoptable || []).length
-  // A chord already bound to one of our own commands by hand is adoptable,
-  // not a conflict; only a chord bound to something else needs attention.
-  readonly property var realConflicts: {
-    var adopt = controller.bindings.adoptable || [], out = []
-    var chords = adopt.map(function (a) { return String(typeof a === "object" ? (a.chord || a.key || "") : a).toUpperCase() })
-    var conflicts = controller.bindings.conflicts || []
-    for (var i = 0; i < conflicts.length; ++i)
-      if (chords.indexOf(String(conflicts[i]).toUpperCase()) < 0) out.push(conflicts[i])
-    return out
-  }
+  readonly property var realConflicts: Utils.realConflicts(controller.bindings.conflicts || [],
+                                                         controller.bindings.adoptable || [])
 
   Item {
     width: parent.width; height: keysHeader.implicitHeight

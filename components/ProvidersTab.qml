@@ -1,8 +1,8 @@
 import QtQuick
-import QtQuick.Controls
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "utils.js" as Utils
 
 // Speech and screen reading are both engines that run here, chosen once
 // and rarely revisited, so one tab holds them as two adjacent groups.
@@ -19,42 +19,18 @@ Column {
   property string confirmDevice: ""
   property string confirmUninstall: ""
   property string ocrConfirmUninstall: ""
-  // Only engines this plugin installs (an `# install:` header) can be removed
-  // here; system packages such as Tesseract belong to the package manager.
-  function canUninstall(m) {
-    return !!m && !!m.install
-      && ((m.installedDevices || []).length > 0 || ["ready", "untested", "failing"].indexOf(m.status) >= 0)
-  }
+  function clearInstallConfirm() { confirmInstall = ""; confirmProvider = ""; confirmDevice = "" }
   readonly property var providers: controller.info.providers || []
-  // Providers declaring the same `# family:` share one row as its variants:
-  // a slider picks among the installed ones and + lists the rest to install.
-  readonly property var providerEntries: {
-    var out = [], families = {}
-    for (var i = 0; i < providers.length; ++i) {
-      var p = providers[i]
-      if (!p.family) { out.push({ family: "", members: [p] }); continue }
-      if (!families[p.family]) { families[p.family] = { family: p.family, members: [] }; out.push(families[p.family]) }
-      families[p.family].members.push(p)
-    }
-    for (var j = 0; j < out.length; ++j)
-      out[j].members.sort(function(a, b) { return String(a.variant).localeCompare(String(b.variant)) })
-    return out
-  }
-  // A variant counts as installed if its engine for any device is present.
-  function variantInstalled(m) { return m.status !== "missing" || (m.installedDevices || []).length > 0 }
-  function variantSummary(m) {
-    var info = m.installInfo || {}
-    var size = String((info.cpu || info["default"] || {}).size || "").replace(/^about /, "~")
-    return [size, m.variantNote || ""].filter(function(part) { return part !== "" }).join(" · ")
-  }
+  readonly property var ocrEngines: controller.info.ocr?.engines || []
+  // Variants of one `# family:` share a row: a slider picks among the
+  // installed ones and + lists the rest to install.
+  readonly property var providerEntries: Utils.groupByFamily(providers)
   property string addingFamily: ""
   // A variant installed from the + list is followed until its job ends; one
   // that installs and passes its test is offered as the one to switch to.
   property string pendingVariant: ""
   property bool pendingSeen: false
   property string provedVariant: ""
-  readonly property bool setupBusy: controller.setupStarting || controller.setupJob.status === "starting"
-                                    || controller.setupJob.status === "running"
   function installVariant(m) {
     if (setupBusy) return
     pendingVariant = m.name; pendingSeen = false; provedVariant = ""
@@ -107,8 +83,8 @@ Column {
         // One provider, or every variant of a family on one row.
         required property var modelData
         readonly property bool isFamily: modelData.family !== ""
-        readonly property var installed: modelData.members.filter(root.variantInstalled)
-        readonly property var available: modelData.members.filter(function(m) { return !root.variantInstalled(m) })
+        readonly property var installed: modelData.members.filter(Utils.variantInstalled)
+        readonly property var available: modelData.members.filter(function(m) { return !Utils.variantInstalled(m) })
         readonly property var active: modelData.members.find(function(m) { return m.name === controller.info.provider }) || null
         readonly property bool selected: active !== null
         // The variant the row stands for: the one in use, else the best
@@ -125,9 +101,9 @@ Column {
         readonly property bool adding: isFamily && root.addingFamily === modelData.family
         readonly property var proved: isFamily ? (modelData.members.find(function(m) {
           return m.name === root.provedVariant && m.status === "ready" && m.name !== controller.info.provider }) || null) : null
-        readonly property bool showDevices: (p.devices || []).length > 0 && root.variantInstalled(p)
+        readonly property bool showDevices: (p.devices || []).length > 0 && Utils.variantInstalled(p)
         readonly property bool showAdd: isFamily && available.length > 0
-        readonly property bool showUninstall: root.canUninstall(p)
+        readonly property bool showUninstall: Utils.canUninstall(p)
         function activateRow() { if (usable) controller.selectProvider(p.name, untested) }
         function activateAction() {
           if (isFamily && installed.length === 0) {
@@ -161,7 +137,7 @@ Column {
             // With one variant there is no slider, so the name says which.
             Text { anchors.left: providerName.right; anchors.leftMargin: 6; anchors.baseline: providerName.baseline; visible: entry.isFamily && entry.installed.length > 0 && !(entry.selected && entry.installed.length > 1); textFormat: Text.PlainText; text: entry.p.variant || ""; color: panel.dim; font.family: panel.ff; font.pixelSize: Style.font.caption }
             Text { anchors.right: providerAction.visible ? providerAction.left : parent.right; anchors.rightMargin: providerAction.visible ? 8 : 0; anchors.verticalCenter: parent.verticalCenter
-              text: entry.failing ? "Not working" : entry.ready ? "● Ready" : ""
+              text: Utils.engineStatusText(entry.p)
               // urgent is otherwise reserved for Stop, but a backend that is
               // present and cannot speak is a genuine fault, not an absence.
               color: entry.failing ? Commons.Color.urgent : entry.ready ? Commons.Color.accent : panel.dim
@@ -173,9 +149,7 @@ Column {
               visible: (!entry.ready && !entry.untested) || controller.verifying === entry.p.name
               text: { if (controller.verifying === entry.p.name) return "Testing…"
                       if (entry.isFamily && entry.installed.length === 0) return entry.adding ? "Close" : "Install"
-                      if (entry.failing && entry.p.install) return "Repair"
-                      if (entry.failing) return "Retry"
-                      return "Install" }
+                      return Utils.engineActionText(entry.p) }
               color: Commons.Color.accent
               font.family: panel.ff
               font.pixelSize: Style.font.caption
@@ -239,32 +213,29 @@ Column {
           Repeater {
             model: entry.adding ? entry.available : []
             delegate: Column {
+              id: variant
               required property var modelData
-              readonly property bool busy: root.pendingVariant === modelData.name && root.setupBusy
+              readonly property bool busy: root.pendingVariant === modelData.name && controller.setupBusy
               width: parent.width; spacing: 2
               Item {
                 width: parent.width; height: Math.max(variantLabel.implicitHeight, variantAction.implicitHeight)
-                Text { id: variantLabel; anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: parent.parent.modelData.variant || parent.parent.modelData.name; color: panel.fg; font.family: panel.ff; font.pixelSize: Style.font.caption }
+                Text { id: variantLabel; anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: variant.modelData.variant || variant.modelData.name; color: panel.fg; font.family: panel.ff; font.pixelSize: Style.font.caption }
                 Text {
                   anchors.left: variantLabel.right; anchors.leftMargin: 8; anchors.right: variantAction.left; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                   elide: Text.ElideRight; textFormat: Text.PlainText
-                  text: parent.parent.busy ? "building · " + Number(controller.setupJob.progress || 0) + "%" : root.variantSummary(parent.parent.modelData)
+                  text: variant.busy ? "building · " + Number(controller.setupJob.progress || 0) + "%" : Utils.variantSummary(variant.modelData)
                   color: panel.dim; font.family: panel.ff; font.pixelSize: Style.font.caption
                 }
                 InlineAction {
                   id: variantAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                  text: parent.parent.busy ? "Cancel" : "Install"
-                  color: parent.parent.busy ? panel.dim : Commons.Color.accent
-                  enabled: parent.parent.busy ? controller.setupCancellable : !root.setupBusy
+                  text: variant.busy ? "Cancel" : "Install"
+                  color: variant.busy ? panel.dim : Commons.Color.accent
+                  enabled: variant.busy ? controller.setupCancellable : !controller.setupBusy
                   font.family: panel.ff; font.pixelSize: Style.font.caption
-                  onTriggered: parent.parent.busy ? controller.cancelSetup() : root.installVariant(parent.parent.modelData)
+                  onTriggered: variant.busy ? controller.cancelSetup() : root.installVariant(variant.modelData)
                 }
               }
-              Rectangle {
-                width: parent.width; height: 3; radius: 1.5; visible: parent.busy; color: Commons.Color.popups.border
-                Rectangle { height: parent.height; radius: parent.radius; color: Commons.Color.accent
-                            width: parent.width * Math.max(0.02, Math.min(1, Number(controller.setupJob.progress || 0) / 100)) }
-              }
+              ProgressLine { width: parent.width; height: 3; visible: variant.busy; percent: controller.setupJob.progress }
             }
           }
           Item {
@@ -285,20 +256,20 @@ Column {
     Repeater { model: root.providerEntries; delegate: providerRow }
     EngineConfirm {
       width: parent.width
-      target: root.confirmInstall !== "" ? (root.providers.find(function(p) { return p.name === root.confirmProvider }) || null) : null
+      target: root.confirmInstall !== "" ? Utils.byName(root.providers, root.confirmProvider) : null
       device: root.confirmDevice
       foreground: panel.fg; fontFamily: panel.ff
-      onCancelled: { root.confirmInstall = ""; root.confirmProvider = ""; root.confirmDevice = "" }
+      onCancelled: root.clearInstallConfirm()
       onConfirmed: {
         if (root.confirmDevice !== "") controller.setDevice(root.confirmProvider, root.confirmDevice, "install")
         else controller.installProvider(root.confirmProvider)
-        root.confirmInstall = ""; root.confirmProvider = ""; root.confirmDevice = ""
+        root.clearInstallConfirm()
       }
     }
     EngineConfirm {
       mode: "uninstall"
       width: parent.width
-      target: root.confirmUninstall !== "" ? (root.providers.find(function(p) { return p.name === root.confirmUninstall }) || null) : null
+      target: root.confirmUninstall !== "" ? Utils.byName(root.providers, root.confirmUninstall) : null
       activeName: controller.info.provider || ""
       foreground: panel.fg; fontFamily: panel.ff
       onCancelled: root.confirmUninstall = ""
@@ -316,23 +287,23 @@ Column {
     Component {
       id: ocrRow
       Rectangle {
+        id: engine
         required property var modelData
-        readonly property bool selected: modelData.name === (controller.info.ocr?.engine || "tesseract")
+        readonly property bool selected: modelData.name === controller.ocrEngine
         readonly property bool ready: modelData.status === "ready"
         readonly property bool failing: modelData.status === "failing"
         readonly property bool untested: modelData.status === "untested"
         readonly property bool usable: ready || untested
         function activateRow() { if (usable) controller.selectOcrEngine(modelData.name, untested) }
         function activateAction() {
-          var row = this
-          if (row.failing && row.modelData.install) {
-            root.ocrConfirmEngine = row.modelData.name
-            root.ocrConfirmInstall = row.modelData.install
-          } else if (row.failing || row.untested) {
-            controller.verifyOcrEngine(row.modelData.name)
+          if (failing && modelData.install) {
+            root.ocrConfirmEngine = modelData.name
+            root.ocrConfirmInstall = modelData.install
+          } else if (failing || untested) {
+            controller.verifyOcrEngine(modelData.name)
           } else {
-            root.ocrConfirmEngine = row.modelData.name
-            root.ocrConfirmInstall = row.modelData.install
+            root.ocrConfirmEngine = modelData.name
+            root.ocrConfirmInstall = modelData.install
           }
         }
         width: parent ? parent.width : 0; height: engineCopy.implicitHeight + Style.space(12); radius: Style.space(6)
@@ -349,45 +320,39 @@ Column {
           id: engineCopy; z: 1; anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; anchors.leftMargin: Style.space(8); anchors.rightMargin: Style.space(8); spacing: 2
           Item {
             width: parent.width; height: engineName.implicitHeight
-            Text { id: engineRadio; text: parent.parent.parent.selected ? "󰝥" : "󰝦"; color: parent.parent.parent.ready ? (parent.parent.parent.selected ? Commons.Color.accent : panel.fg) : panel.dim; font.family: panel.ff; font.pixelSize: Style.font.body }
-            Text { id: engineName; anchors.left: engineRadio.right; anchors.leftMargin: 8; textFormat: Text.PlainText; text: parent.parent.parent.modelData.title || parent.parent.parent.modelData.name; color: parent.parent.parent.usable ? panel.fg : panel.dim; font.family: panel.ff; font.pixelSize: Style.font.body }
+            Text { id: engineRadio; text: engine.selected ? "󰝥" : "󰝦"; color: engine.ready ? (engine.selected ? Commons.Color.accent : panel.fg) : panel.dim; font.family: panel.ff; font.pixelSize: Style.font.body }
+            Text { id: engineName; anchors.left: engineRadio.right; anchors.leftMargin: 8; textFormat: Text.PlainText; text: engine.modelData.title || engine.modelData.name; color: engine.usable ? panel.fg : panel.dim; font.family: panel.ff; font.pixelSize: Style.font.body }
             Text { anchors.right: engineAction.visible ? engineAction.left : parent.right; anchors.rightMargin: engineAction.visible ? 8 : 0; anchors.verticalCenter: parent.verticalCenter
-              text: { var d = parent.parent.parent
-                      if (d.failing) return "Not working"
-                      return d.ready ? "● Ready" : "" }
-              color: { var d = parent.parent.parent; return d.failing ? Commons.Color.urgent : d.ready ? Commons.Color.accent : panel.dim }
+              text: Utils.engineStatusText(engine.modelData)
+              color: engine.failing ? Commons.Color.urgent : engine.ready ? Commons.Color.accent : panel.dim
               font.family: panel.ff; font.pixelSize: Style.font.caption
             }
             InlineAction {
-              id: engineAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; visible: (!parent.parent.parent.ready && !parent.parent.parent.untested) || controller.verifying === "ocr:" + parent.parent.parent.modelData.name
-              text: { var d = parent.parent.parent
-                      if (controller.verifying === "ocr:" + d.modelData.name) return "Testing…"
-                      if (d.failing && d.modelData.install) return "Repair"
-                      if (d.failing) return "Retry"
-                      return "Install" }
+              id: engineAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; visible: (!engine.ready && !engine.untested) || controller.verifying === "ocr:" + engine.modelData.name
+              text: controller.verifying === "ocr:" + engine.modelData.name ? "Testing…" : Utils.engineActionText(engine.modelData)
               color: Commons.Color.accent; font.family: panel.ff; font.pixelSize: Style.font.caption
-              onTriggered: parent.parent.parent.activateAction()
+              onTriggered: engine.activateAction()
             }
           }
           InlineAction {
             anchors.right: parent.right
-            visible: root.canUninstall(parent.parent.modelData)
+            visible: Utils.canUninstall(engine.modelData)
             text: "󰆴"; Accessible.name: "Uninstall"; color: hovered || activeFocus ? Commons.Color.urgent : panel.dim; font.family: panel.ff; font.pixelSize: Style.font.caption
-            onTriggered: root.ocrConfirmUninstall = parent.parent.modelData.name
+            onTriggered: root.ocrConfirmUninstall = engine.modelData.name
           }
-          Text { width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText; text: parent.parent.modelData.desc || ""; color: panel.dim; font.family: panel.ff; font.pixelSize: Style.font.caption }
-          Text { visible: parent.parent.failing; width: parent.width; wrapMode: Text.WordWrap; text: "Installed, but it could not read the test image. Press Test to try again."; color: Commons.Color.urgent; font.family: panel.ff; font.pixelSize: Style.font.caption }
+          Text { width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText; text: engine.modelData.desc || ""; color: panel.dim; font.family: panel.ff; font.pixelSize: Style.font.caption }
+          Text { visible: engine.failing; width: parent.width; wrapMode: Text.WordWrap; text: "Installed, but it could not read the test image. Press Test to try again."; color: Commons.Color.urgent; font.family: panel.ff; font.pixelSize: Style.font.caption }
         }
         MouseArea { anchors.fill: parent; enabled: parent.usable; z: 0; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
       }
     }
     Column {
       width: parent.width; spacing: Style.space(4)
-      Repeater { model: controller.info.ocr?.engines || []; delegate: ocrRow }
+      Repeater { model: root.ocrEngines; delegate: ocrRow }
     }
     EngineConfirm {
       width: parent.width
-      target: root.ocrConfirmInstall !== "" ? ((controller.info.ocr?.engines || []).find(function(e) { return e.name === root.ocrConfirmEngine }) || null) : null
+      target: root.ocrConfirmInstall !== "" ? Utils.byName(root.ocrEngines, root.ocrConfirmEngine) : null
       foreground: panel.fg; fontFamily: panel.ff
       onCancelled: { root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
       onConfirmed: { controller.installProvider(root.ocrConfirmEngine); root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
@@ -395,7 +360,7 @@ Column {
     EngineConfirm {
       mode: "uninstall"
       width: parent.width
-      target: root.ocrConfirmUninstall !== "" ? ((controller.info.ocr?.engines || []).find(function(e) { return e.name === root.ocrConfirmUninstall }) || null) : null
+      target: root.ocrConfirmUninstall !== "" ? Utils.byName(root.ocrEngines, root.ocrConfirmUninstall) : null
       activeName: controller.info.ocr?.engine || ""
       inUseWarning: "This is the OCR engine in use. Pick another one afterwards or screen reading will stop."
       foreground: panel.fg; fontFamily: panel.ff
@@ -406,7 +371,7 @@ Column {
     // or OCR, so the two groups never need a line each.
     Text {
       width: parent.width
-      visible: controller.setupStarting || controller.setupJob.status === "running" || controller.setupJob.status === "starting" || controller.setupJob.status === "error"
+      visible: controller.setupBusy || controller.setupJob.status === "error"
       textFormat: Text.PlainText
       text: controller.setupStarting ? "Starting setup safely…" : controller.setupJob.message; wrapMode: Text.WordWrap
       color: controller.setupJob.status === "error" ? Commons.Color.urgent : panel.dim

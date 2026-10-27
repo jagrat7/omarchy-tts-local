@@ -3,6 +3,7 @@ import QtQuick.Controls
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "utils.js" as Utils
 
 // Every Piper voice in the catalogue: what is installed first, then what
 // can be downloaded, searchable and sortable.
@@ -30,49 +31,14 @@ Column {
     return 0
   }
 
-  function qualityRank(q) {
-    return ({ "x_low": 0, "low": 1, "medium": 2, "high": 3 })[String(q)] ?? 1
-  }
-
   readonly property int installedCount: {
     var all = controller.catalogue || [], n = 0
     for (var i = 0; i < all.length; ++i) if (all[i].installed) n++
     return n
   }
 
-  readonly property var filteredVoices: {
-    var q = voiceFilter.toLowerCase().trim(), all = controller.catalogue || [], out = []
-    for (var i = 0; i < all.length; ++i) {
-      var value = all[i]
-      if (!q || String(value.key).toLowerCase().indexOf(q) >= 0
-             || String(value.lang).toLowerCase().indexOf(q) >= 0
-             || String(value.country).toLowerCase().indexOf(q) >= 0) out.push(value)
-    }
-    var mode = root.voiceSort
-    out.sort(function (a, b) {
-      // Installed always leads, so the list you can act on is never buried
-      // under a hundred you have not downloaded.
-      var aState = a.installed ? 0 : (a.key === controller.info.voice ? 1 : 2)
-      var bState = b.installed ? 0 : (b.key === controller.info.voice ? 1 : 2)
-      if (aState !== bState) return aState - bState
-      if (mode === "name") return String(a.name).localeCompare(String(b.name))
-      if (mode === "size") return (b.sizeMB - a.sizeMB) || String(a.name).localeCompare(String(b.name))
-      if (mode === "quality") return (root.qualityRank(b.quality) - root.qualityRank(a.quality))
-                                     || String(a.name).localeCompare(String(b.name))
-      return String(a.lang).localeCompare(String(b.lang))
-             || String(a.name).localeCompare(String(b.name))
-    })
-    // ListView sections need the group on the item itself.
-    var grouped = []
-    for (var j = 0; j < out.length; ++j) {
-      var v = out[j]
-      grouped.push({ key: v.key, name: v.name, lang: v.lang, country: v.country,
-                     quality: v.quality, sizeMB: v.sizeMB, installed: v.installed,
-                     group: v.installed ? "Installed"
-                       : (v.key === controller.info.voice ? "Needs repair" : "Available") })
-    }
-    return grouped
-  }
+  readonly property var filteredVoices: Utils.catalogueRows(controller.catalogue || [], panel.voiceFilter,
+                                                            root.voiceSort, controller.info.voice)
 
   Item {
     width: parent.width; height: browseHeader.implicitHeight
@@ -128,19 +94,19 @@ Column {
     delegate: Rectangle {
       required property var modelData
       readonly property bool busy: (controller.downloadStarting && controller.pendingDownloadVoice === modelData.key)
-                                    || ((controller.download.status === "starting" || controller.download.status === "downloading") && controller.download.voice === modelData.key)
+                                    || (controller.downloadRunning && controller.download.voice === modelData.key)
       function activateRow() { if (modelData.installed && modelData.key !== controller.info.voice) controller.useVoice(modelData.key) }
       function activateAction() { if (busy) controller.cancelDownload(); else if (modelData.installed) root.confirmVoiceRemove = modelData.key; else controller.downloadVoice(modelData.key) }
       width: ListView.view.width; height: 42; radius: 5; color: modelData.installed ? panel.tint(.07) : "transparent"
       activeFocusOnTab: modelData.installed && modelData.key !== controller.info.voice
       border.width: activeFocus ? 1 : 0; border.color: Commons.Color.accent
       Accessible.role: Accessible.Button
-      Accessible.name: "Use " + panel.voiceLabel(modelData.key)
+      Accessible.name: "Use " + Utils.voiceLabel(modelData.key)
       Accessible.onPressAction: activateRow()
       Keys.onSpacePressed: activateRow()
       Keys.onReturnPressed: activateRow()
       Keys.onEnterPressed: activateRow()
-      Text { anchors.left: parent.left; anchors.right: parent.right; anchors.rightMargin: 112; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; textFormat: Text.PlainText; text: panel.titleCase(String(parent.modelData.name).replace(/_/g, " ")) + " · " + parent.modelData.lang + " · " + parent.modelData.quality; color: panel.fg; font.family: panel.ff; font.pixelSize: Style.font.caption }
+      Text { anchors.left: parent.left; anchors.right: parent.right; anchors.rightMargin: 112; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; textFormat: Text.PlainText; text: Utils.titleCase(String(parent.modelData.name).replace(/_/g, " ")) + " · " + parent.modelData.lang + " · " + parent.modelData.quality; color: panel.fg; font.family: panel.ff; font.pixelSize: Style.font.caption }
       InlineAction {
         id: voiceAction; z: 2; anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
         text: parent.modelData.installed ? (parent.modelData.key === controller.info.voice ? "󰄬 Active" : "Remove") : (parent.busy ? (controller.downloadCancellable ? controller.download.percent + "% · Cancel" : "Starting…") : (parent.modelData.key === controller.info.voice ? "Repair · " : "󰇚 ") + parent.modelData.sizeMB + " MB")
@@ -157,7 +123,7 @@ Column {
     visible: root.confirmVoiceRemove !== ""; color: panel.tint(0.08); border.width: 1; border.color: Commons.Color.popups.border
     Row {
       id: voiceRemoveRow; anchors.fill: parent; anchors.margins: 8; spacing: 8
-      Text { width: parent.width - cancelVoice.width - removeVoice.width - 24; elide: Text.ElideMiddle; textFormat: Text.PlainText; text: "Remove " + panel.voiceLabel(root.confirmVoiceRemove) + "?" + (root.removeSizeMB > 0 ? "  Frees " + root.removeSizeMB + " MB." : ""); color: panel.fg; font.family: panel.ff; font.pixelSize: Style.font.caption }
+      Text { width: parent.width - cancelVoice.width - removeVoice.width - 24; elide: Text.ElideMiddle; textFormat: Text.PlainText; text: "Remove " + Utils.voiceLabel(root.confirmVoiceRemove) + "?" + (root.removeSizeMB > 0 ? "  Frees " + root.removeSizeMB + " MB." : ""); color: panel.fg; font.family: panel.ff; font.pixelSize: Style.font.caption }
       Button { id: cancelVoice; text: "Cancel"; bordered: true; focusable: true; onClicked: root.confirmVoiceRemove = "" }
       Button { id: removeVoice; text: "Remove"; bordered: true; focusable: true; foreground: Commons.Color.urgent; onClicked: { controller.removeVoice(root.confirmVoiceRemove); root.confirmVoiceRemove = "" } }
     }
