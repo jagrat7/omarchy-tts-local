@@ -357,6 +357,57 @@ class CliConfigTests(unittest.TestCase):
                     0,
                 )
 
+    def test_typed_text_never_reaches_a_command_line(self):
+        # Other local accounts can read any process's arguments, so text the
+        # user typed must travel on stdin or a descriptor. Every command speak
+        # runs from PATH goes through a shim that records its arguments.
+        real_path = self.env["PATH"]
+        shims = Path(self.temp.name, "argv-shims")
+        shims.mkdir()
+        log = Path(self.temp.name, "argv.log")
+        record = shims / ".record"
+        record.write_text(
+            "#!/bin/bash\n"
+            'printf "%s\\0" "$@" >> "$ARGV_LOG"\n'
+            'IFS=: read -ra dirs <<< "$ARGV_REAL_PATH"\n'
+            'for d in "${dirs[@]}"; do\n'
+            '  [[ -x "$d/${0##*/}" ]] && exec "$d/${0##*/}" "$@"\n'
+            "done\n"
+            "exit 127\n"
+        )
+        record.chmod(0o755)
+        for directory in filter(None, real_path.split(os.pathsep)):
+            if not os.path.isdir(directory):
+                continue
+            for name in os.listdir(directory):
+                target = Path(directory, name)
+                if not (shims / name).exists() and os.access(target, os.X_OK) \
+                        and target.is_file():
+                    (shims / name).symlink_to(record)
+        providers = Path(self.temp.name, "omarchy-tts-local", "providers")
+        providers.mkdir(parents=True)
+        provider = providers / "argvcheck"
+        provider.write_text("#!/usr/bin/env bash\n# kind: local\n# probe: true\n"
+                            "cat >/dev/null\n")
+        provider.chmod(0o755)
+        # One plain word, so sanitizing cannot reshape it on its way through.
+        secret = "private" + "".join(chr(ord("a") + int(c, 16)) for c in uuid.uuid4().hex)
+        env = {**self.env, "PATH": f"{shims}{os.pathsep}{real_path}",
+               "ARGV_LOG": str(log), "ARGV_REAL_PATH": real_path}
+
+        def speak(*args, text=None):
+            return subprocess.run([SPEAK, *args], input=text, text=True,
+                                  capture_output=True, env=env, check=True)
+
+        speak("--set-stdin-json", ".ui.sampleText", text=json.dumps(secret) + "\n")
+        self.assertEqual(json.loads(speak("--info").stdout)["ui"]["sampleText"], secret)
+        self.assertEqual(speak("--preview-stdin-json", text=json.dumps(secret) + "\n").stdout,
+                         secret)
+        speak("--provider", "argvcheck", "--stdin-json", text=json.dumps(secret) + "\n")
+        recorded = log.read_bytes()
+        self.assertIn(b"--set-stdin-json", recorded)
+        self.assertNotIn(secret.encode(), recorded)
+
     def test_input_and_length_limits_are_enforced_before_a_provider_runs(self):
         providers = Path(self.temp.name, "omarchy-tts-local", "providers")
         providers.mkdir(parents=True)

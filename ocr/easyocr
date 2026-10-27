@@ -16,15 +16,15 @@ EPY="${EASYOCR_PYTHON:-$ENGINE_DIR/bin/python}"
 MODELS="${EASYOCR_MODELS:-$ENGINE_DIR/models}"
 IMAGE_MAX_BYTES=52428800
 if [[ ! -x "$EPY" ]]; then
-  echo "speak: EasyOCR is not installed; add it from the Screen tab." >&2
-  notify-send -a "Speak" "EasyOCR not installed" "Add it from the Screen tab." 2>/dev/null
+  echo "speak: EasyOCR is not installed; add it from the Providers tab." >&2
+  notify-send -a "Speak" "EasyOCR not installed" "Add it from the Providers tab." 2>/dev/null
   exit 127
 fi
 # An environment this release did not build from its shipped lock is not an
 # installed engine, whatever it contains.
 if [[ -z "${EASYOCR_PYTHON:-}" ]] && [[ "$(cat "$ENGINE_DIR/.lock-sha256" 2>/dev/null)" != "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/easyocr.lock" | cut -d' ' -f1)" ]]; then
-  echo "speak: EasyOCR was installed by an earlier release; reinstall it from the Screen tab." >&2
-  notify-send -a "Speak" "EasyOCR needs reinstalling" "Reinstall it from the Screen tab." 2>/dev/null
+  echo "speak: EasyOCR was installed by an earlier release; reinstall it from the Providers tab." >&2
+  notify-send -a "Speak" "EasyOCR needs reinstalling" "Reinstall it from the Providers tab." 2>/dev/null
   exit 127
 fi
 
@@ -112,10 +112,10 @@ for model in "$MODELS"/*.pth; do
   name="$(basename "$model")"
   want="$(jq -r --arg f "$name" '.easyocr.models[$f].sha256 // empty' "$MANIFEST" 2>/dev/null)"
   if [[ ! "$want" =~ ^[0-9a-f]{64}$ || -L "$model" ]]; then
-    printf 'speak: EasyOCR: %s is not a verified model file; reinstall EasyOCR from the Screen tab\n' "$name" >&2; exit 65
+    printf 'speak: EasyOCR: %s is not a verified model file; reinstall EasyOCR from the Providers tab\n' "$name" >&2; exit 65
   fi
   if [[ "$(sha256sum "$model" | cut -d' ' -f1)" != "$want" ]]; then
-    printf 'speak: EasyOCR: %s failed verification; reinstall EasyOCR from the Screen tab\n' "$name" >&2; exit 65
+    printf 'speak: EasyOCR: %s failed verification; reinstall EasyOCR from the Providers tab\n' "$name" >&2; exit 65
   fi
 done
 
