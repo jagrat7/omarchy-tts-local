@@ -3,6 +3,7 @@ import QtQuick.Controls
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "utils.js" as Utils
 
 // The engine is chosen once on Providers; languages are browsed, so
 // they keep a tab of their own.
@@ -22,38 +23,29 @@ Column {
     for (var i = 0; i < all.length; ++i) if (all[i].installed) out.push(all[i])
     return out
   }
-  readonly property var availableLanguages: {
-    var q = String(root.languageFilter).toLowerCase().trim()
-    var all = root.ocrLanguages, out = []
-    for (var i = 0; i < all.length; ++i) {
-      var l = all[i]
-      if (l.installed) continue
-      if (!q || String(l.value).toLowerCase().indexOf(q) >= 0
-             || String(l.label).toLowerCase().indexOf(q) >= 0) out.push(l)
-    }
-    return out
-  }
+  readonly property var availableLanguages:
+    Utils.filterByQuery(root.ocrLanguages.filter(function (l) { return !l.installed }), root.languageFilter, ["value", "label"])
   function languageIsActive(code) {
-    return String(controller.info.ocr?.langs || "eng").split("+").indexOf(String(code)) >= 0
+    return Utils.langCodes(controller.info.ocr?.langs).indexOf(String(code)) >= 0
   }
   function toggleLanguage(code) {
-    var active = String(controller.info.ocr?.langs || "eng").split("+").filter(function (c) { return c.length })
+    var active = Utils.langCodes(controller.info.ocr?.langs)
     var at = active.indexOf(String(code))
     if (at >= 0) { if (active.length === 1) return; active.splice(at, 1) }
     else active.push(String(code))
-    controller.setConfig(".ocr." + (controller.info.ocr?.engine || "tesseract") + ".langs", active.join("+"))
+    controller.setConfig(".ocr." + controller.ocrEngine + ".langs", active.join("+"))
   }
 
   Item {
     width: parent.width; height: langHeader.implicitHeight
-    PanelSectionHeader { id: langHeader; text: "Languages for " + (panel.activeOcrEngine ? (panel.activeOcrEngine.title || panel.activeOcrEngine.name) : (controller.info.ocr?.engine || "tesseract")); foreground: panel.fg }
+    PanelSectionHeader { id: langHeader; text: "Languages for " + (panel.activeOcrEngine ? (panel.activeOcrEngine.title || panel.activeOcrEngine.name) : controller.ocrEngine); foreground: panel.fg }
     InlineAction {
       anchors.right: parent.right
       text: controller.refreshingLanguages !== "" ? "Checking…"
             : root.installedLanguages.length + " installed · " + root.availableLanguages.length + " available"
       color: panel.dim; font.family: panel.ff; font.pixelSize: Style.font.caption
       enabled: controller.refreshingLanguages === ""
-      onTriggered: controller.refreshLanguages(controller.info.ocr?.engine || "tesseract")
+      onTriggered: controller.refreshLanguages(controller.ocrEngine)
     }
   }
   Text {
@@ -108,8 +100,7 @@ Column {
     model: root.availableLanguages
     delegate: Rectangle {
       required property var modelData
-      readonly property bool busy: controller.setupJob.target === "lang:" + modelData.value
-                                   && (controller.setupJob.status === "running" || controller.setupJob.status === "starting")
+      readonly property bool busy: controller.setupJob.target === "lang:" + modelData.value && controller.setupRunning
       width: ListView.view.width; height: 28; radius: 4; color: "transparent"
       Text { anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter
              textFormat: Text.PlainText
@@ -119,7 +110,7 @@ Column {
       // Language packs are installed as tesseract-data packages, so
       // the action exists only for tesseract. Other engines list what
       // they have; adding to them is a follow-up, not a broken button.
-      readonly property bool installable: (controller.info.ocr?.engine || "tesseract") === "tesseract"
+      readonly property bool installable: controller.ocrEngine === "tesseract"
       InlineAction { anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
              text: !parent.installable ? "not downloaded" : parent.busy ? "Installing…" : "󰇚 Install"
              color: parent.installable ? Commons.Color.accent : panel.dim; font.family: panel.ff; font.pixelSize: Style.font.caption

@@ -28,6 +28,19 @@ class QmlContractTests(unittest.TestCase):
         cls.key_row = (ROOT / "components" / "KeyRow.qml").read_text()
         cls.setting_toggle = (ROOT / "components" / "SettingToggle.qml").read_text()
         cls.segmented = (ROOT / "components" / "SegmentedControl.qml").read_text()
+        # Pure helpers shared by all of the above; tests/test_utils.py runs them.
+        cls.utils = (ROOT / "components" / "utils.js").read_text()
+        cls.bar_widget = (ROOT / "BarWidget.qml").read_text()
+
+    def test_every_utils_caller_imports_the_shared_library(self):
+        self.assertTrue(self.utils.startswith(".pragma library\n"))
+        for path in [ROOT / "Panel.qml", ROOT / "BarWidget.qml", *sorted((ROOT / "components").glob("*.qml"))]:
+            source = path.read_text()
+            if "Utils." not in source:
+                continue
+            with self.subTest(path.name):
+                prefix = "components/" if path.parent == ROOT else ""
+                self.assertIn('import "%sutils.js" as Utils\n' % prefix, source)
 
     def test_theme_colours_are_never_shadowed_by_qt_color(self):
         # Qt 6.12 added a QtQuick `Color` singleton that wins over an
@@ -190,8 +203,8 @@ class QmlContractTests(unittest.TestCase):
 
     def test_first_run_counts_only_usable_providers(self):
         self.assertIn("readonly property bool hasUsableProvider", self.panel)
-        self.assertIn('all[i].status === "ready" || all[i].status === "untested"',
-                      self.panel)
+        self.assertIn('return m.status === "ready" || m.status === "untested"', self.utils)
+        self.assertIn("(controller.info.providers || []).some(Utils.isUsable)", self.panel)
         self.assertIn("controller.setupLoaded", self.panel)
         self.assertIn("!hasUsableProvider", self.panel)
 
@@ -236,7 +249,10 @@ class QmlContractTests(unittest.TestCase):
         self.assertNotIn("restart(", block)
 
     def test_executable_urls_support_encoded_install_paths(self):
-        self.assertIn("decodeURIComponent(value.slice(7))", self.controller)
+        self.assertIn("decodeURIComponent(value.slice(7))", self.utils)
+        for name in ("speak", "speak-voice", "speak-bindings", "speak-setup"):
+            self.assertIn('Utils.localPath(Qt.resolvedUrl("../bin/%s"))' % name, self.controller)
+        self.assertIn('Utils.localPath(Qt.resolvedUrl("bin/speak"))', self.bar_widget)
 
     def test_user_content_is_never_auto_detected_as_rich_text(self):
         self.assertIn("textFormat: Text.PlainText", self.inline_action)
@@ -297,7 +313,8 @@ class QmlContractTests(unittest.TestCase):
         self.assertIn('"Open Providers', overview)
 
     def test_speed_goes_live_while_speaking_and_keeps_the_override(self):
-        apply = self.overview[self.overview.index("function applyRate"):self.overview.index("function clockText")]
+        start = self.overview.index("function applyRate")
+        apply = self.overview[start:self.overview.index("\n  }\n", start)]
         self.assertIn("root.rateOverride = s", apply)
         self.assertIn("controller.setLiveRate(s)", apply)
         self.assertIn("Math.max(root.rateMinimum, Math.min(root.rateMaximum", apply)

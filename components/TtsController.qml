@@ -1,19 +1,18 @@
 import QtQuick
 import Quickshell.Io
+import "utils.js" as Utils
 
 Item {
   id: root
   visible: false
 
-  function localPath(url) {
-    var value = String(url)
-    return value.indexOf("file://") === 0 ? decodeURIComponent(value.slice(7)) : value
-  }
-  readonly property string speakBin: localPath(Qt.resolvedUrl("../bin/speak"))
-  readonly property string voiceBin: localPath(Qt.resolvedUrl("../bin/speak-voice"))
-  readonly property string bindingsBin: localPath(Qt.resolvedUrl("../bin/speak-bindings"))
-  readonly property string setupBin: localPath(Qt.resolvedUrl("../bin/speak-setup"))
+  readonly property string speakBin: Utils.localPath(Qt.resolvedUrl("../bin/speak"))
+  readonly property string voiceBin: Utils.localPath(Qt.resolvedUrl("../bin/speak-voice"))
+  readonly property string bindingsBin: Utils.localPath(Qt.resolvedUrl("../bin/speak-bindings"))
+  readonly property string setupBin: Utils.localPath(Qt.resolvedUrl("../bin/speak-setup"))
   property var info: ({ providers: [], voices: [], ocr: {}, sanitizer: {}, ui: {} })
+  // The OCR engine in use; tesseract until a config says otherwise.
+  readonly property string ocrEngine: info.ocr?.engine || "tesseract"
   property var catalogue: []
   property bool catalogueLoading: false
   property var download: ({ status: "idle", voice: "", percent: 0 })
@@ -36,7 +35,7 @@ Item {
   property string status: statusSource ? String(statusSource.status || (statusSource.speaking ? "speaking" : "idle")) : watchedStatus
   readonly property bool paused: status === "paused"
   readonly property bool speaking: status !== "idle"
-  property var nowPlaying: ({ status: "idle", text: "", chars: 0, elapsed: null, duration: null, rate: 1, provider: "", voice: "", canPause: false, canLiveRate: false })
+  property var nowPlaying: Utils.idleNowPlaying()
   property bool nowPlayingQueued: false
   property var playbackQueue: []
 
@@ -49,7 +48,7 @@ Item {
   onPanelOpenChanged: refreshNowPlaying()
   onStatusChanged: {
     if (speaking) refreshNowPlaying()
-    else nowPlaying = { status: "idle", text: "", chars: 0, elapsed: null, duration: null, rate: 1, provider: "", voice: "", canPause: false, canLiveRate: false }
+    else nowPlaying = Utils.idleNowPlaying()
   }
   function runNextPlayback() {
     if (playbackProc.running || playbackQueue.length === 0) return
@@ -72,12 +71,17 @@ Item {
   function resume() { error = ""; playbackControl(["--resume"]) }
   function togglePause() { error = ""; playbackControl(["--toggle-pause"]) }
   function setLiveRate(rate) { error = ""; playbackControl(["--live-rate", String(rate)]) }
+  // A setup or download job counts as running from "starting" on; busy also
+  // covers the moment before the backend has answered the start request.
+  readonly property bool setupRunning: setupJob.status === "starting" || setupJob.status === "running"
+  readonly property bool setupBusy: setupStarting || setupRunning
+  readonly property bool downloadRunning: download.status === "starting" || download.status === "downloading"
   readonly property bool setupCancellable:
-    (setupJob.status === "starting" || setupJob.status === "running")
+    setupRunning
     && setupJob.cancellable !== false
     && Number(setupJob.pid || 0) > 1 && String(setupJob.processIdentity || "") !== ""
   readonly property bool downloadCancellable:
-    (download.status === "starting" || download.status === "downloading")
+    downloadRunning
     && Number(download.pid || 0) > 1 && String(download.processIdentity || "") !== ""
   signal actionFinished
 
@@ -431,8 +435,7 @@ Item {
         root.error = String(downloadStatusStderr.text || "Could not read voice-download status.").trim()
         return
       }
-      var wasActive = root.downloadStarting || root.pendingDownloadVoice !== ""
-                      || ["starting", "downloading"].indexOf(root.download.status) >= 0
+      var wasActive = root.downloadStarting || root.pendingDownloadVoice !== "" || root.downloadRunning
       root.download = result
       root.pendingDownloadVoice = ""
       if (["starting", "downloading"].indexOf(result.status) >= 0) {

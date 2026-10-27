@@ -3,6 +3,7 @@ import QtQuick.Controls
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "utils.js" as Utils
 
 // A teleprompter: the words being read are the largest thing on the
 // panel, with transport and speed under them. When nothing is being
@@ -61,19 +62,8 @@ Column {
   // open it upward when there is more room above; if the shell's dropdown
   // ever stops exposing a popup this way, it simply keeps opening downward.
   property var voicePopup: null
-  function findPopup(item) {
-    var kids = item ? item.children : []
-    for (var i = 0; i < kids.length; i++) {
-      var data = kids[i].data || []
-      for (var j = 0; j < data.length; j++)
-        if (data[j] && data[j].closePolicy !== undefined && data[j].opened !== undefined) return data[j]
-      var deeper = root.findPopup(kids[i])
-      if (deeper) return deeper
-    }
-    return null
-  }
   function openUpwardWhenCramped(dropdown) {
-    var popup = root.findPopup(dropdown)
+    var popup = Utils.findPopup(dropdown)
     if (!popup || !popup.parent) return
     // A press on the field itself used to close the list on press-outside
     // and then reopen it on click. Only presses outside the field close it
@@ -95,10 +85,6 @@ Column {
     root.rateOverride = s
     if (controller.speaking) controller.setLiveRate(s)
     else controller.setConfig(".rate", s.toFixed(2))
-  }
-  function clockText(seconds) {
-    var s = Math.max(0, Math.round(seconds))
-    return Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2)
   }
 
   Rectangle {
@@ -181,14 +167,14 @@ Column {
       height: Style.space(30); visible: prompter.visible
       gradient: Gradient {
         GradientStop { position: 0; color: prompterScreen.color }
-        GradientStop { position: 1; color: Qt.rgba(prompterScreen.color.r, prompterScreen.color.g, prompterScreen.color.b, 0) }
+        GradientStop { position: 1; color: Utils.withAlpha(prompterScreen.color, 0) }
       }
     }
     Rectangle {
       anchors.bottom: prompter.bottom; anchors.left: prompter.left; anchors.right: prompter.right
       height: Style.space(30); visible: prompter.visible
       gradient: Gradient {
-        GradientStop { position: 0; color: Qt.rgba(prompterScreen.color.r, prompterScreen.color.g, prompterScreen.color.b, 0) }
+        GradientStop { position: 0; color: Utils.withAlpha(prompterScreen.color, 0) }
         GradientStop { position: 1; color: prompterScreen.color }
       }
     }
@@ -228,7 +214,7 @@ Column {
           id: footerLeft
           textFormat: Text.PlainText
           text: !prompterScreen.reading ? (panel.voiceMissing ? (root.voiceFetchable ? "Download a voice to hear this" : "Install a voice in Providers to hear this") : "Sample · Enter to play")
-                : panel.npDuration > 0 ? root.clockText(panel.npElapsed) : ""
+                : panel.npDuration > 0 ? Utils.clockText(panel.npElapsed) : ""
           color: panel.voiceMissing && !prompterScreen.reading ? Commons.Color.accent : panel.dim
           font.family: panel.ff; font.pixelSize: Style.font.caption
         }
@@ -246,7 +232,7 @@ Column {
           anchors.right: parent.right
           textFormat: Text.PlainText
           text: !prompterScreen.reading ? "Runs locally"
-                : panel.npDuration > 0 ? "−" + root.clockText(panel.npDuration - panel.npElapsed) : ""
+                : panel.npDuration > 0 ? "−" + Utils.clockText(panel.npDuration - panel.npElapsed) : ""
           color: panel.dim; font.family: panel.ff; font.pixelSize: Style.font.caption
         }
       }

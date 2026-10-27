@@ -20,6 +20,9 @@ remains independently useful and testable.
 - `Panel.qml` owns presentation and transient interaction state shared across
   tabs; each tab's body is a component (`components/*Tab.qml`,
   `VoiceBrowser.qml`) that also owns the state only it uses.
+- `components/utils.js` holds the pure helpers (key chords, voice names,
+  catalogue sorting, provider checks, formatting). It reads no QML state, so
+  `tests/test_utils.py` runs it directly under node.
 
 QML uses argv arrays for user-controlled values. Shell interpretation is
 limited to a fixed allowlist handled by the graphical setup backend.

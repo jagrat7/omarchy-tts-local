@@ -3,6 +3,7 @@ import QtQuick.Controls
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "utils.js" as Utils
 
 // Confirmation for installing or removing any engine the plugin manages,
 // speech or OCR. Sizes and notes come from the engine's own `# installsize:`
@@ -48,7 +49,7 @@ Rectangle {
   width: parent ? parent.width : implicitWidth
   height: content.implicitHeight + 16
   radius: 6
-  color: Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, 0.08)
+  color: Utils.withAlpha(Commons.Color.accent, 0.08)
   border.width: 1
   border.color: Commons.Color.popups.border
 
