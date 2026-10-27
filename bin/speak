@@ -477,8 +477,8 @@ emit_info() {
              --arg rateMin "$(meta_of "$b" ratemin)" \
              --arg rateMax "$(meta_of "$b" ratemax)" \
              --arg deprecated "$(meta_of "$b" deprecated)" \
-             --argjson config "$config" \
-             '{name:$name, title:(if $title=="" then $name else $title end), health:$health,
+             --slurpfile configFile <(printf '%s\n' "$config") \
+             '$configFile[0] as $config | {name:$name, title:(if $title=="" then $name else $title end), health:$health,
                family:(if $family=="" then null else $family end),
                variant:(if $variant=="" then null else $variant end), variantNote:$variantNote,
                desc:$desc, status:$status, install:$install, installInfo:$installInfo,
@@ -534,16 +534,18 @@ emit_info() {
   is_speaking && speaking=true
   # The voice list goes through a descriptor, not an argument, so a long
   # list from a user provider can never exceed the single-argument limit.
+  # The configuration does too: it holds the user's sample text, and other
+  # local accounts can read any process's arguments.
   jq -nc \
     --argjson providers "$provs" \
     --slurpfile voicesFile <(printf '%s\n' "$vs") \
-    --argjson config "$config" \
+    --slurpfile configFile <(printf '%s\n' "$config") \
     --arg voice "$voice" \
     --arg voicePath "$voice_path" \
     --argjson ocrLanguages "$(ocr_languages "$(jq -r '.ocr.engine // "tesseract"' <<< "$config")")" \
     --argjson ocrEngines "$engines" \
     --argjson speaking "$speaking" \
-    '{provider:($config.provider // "piper"), voice:$voice, voicePath:$voicePath,
+    '$configFile[0] as $config | {provider:($config.provider // "piper"), voice:$voice, voicePath:$voicePath,
       rate:($config.rate // 1.0), maxChars:($config.maxChars // 0),
       speaking:$speaking, providers:$providers, voices:$voicesFile[0],
       ocr:{engine:($config.ocr.engine // "tesseract"),

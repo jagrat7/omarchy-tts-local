@@ -45,11 +45,11 @@ for code in "${requested[@]}"; do
 done
 if [[ -n "$missing" ]]; then
   printf 'speak: OCR language data not installed: %s\n' "$missing" >&2
-  printf 'speak: install it from the Screen tab, or: omarchy pkg add tesseract-data-%s\n' \
+  printf 'speak: install it from the Languages tab, or: omarchy pkg add tesseract-data-%s\n' \
     "${missing%%,*}" >&2
   command -v notify-send >/dev/null 2>&1 &&
     notify-send -a "Speak" "OCR language missing" \
-      "$missing is not installed. Add it from the Screen tab." 2>/dev/null
+      "$missing is not installed. Add it from the Languages tab." 2>/dev/null
   exit 78
 fi
 

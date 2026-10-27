@@ -207,8 +207,11 @@ tts_config_set_unlocked() { # jq path, JSON-or-string value
     .ui.sampleText) [[ ${#value} -le 4096 ]] || return 3 ;;
   esac
   tmp="$(mktemp "${config_file}.XXXXXX")" || return 1
+  # The value reaches jq on stdin, never as an argument: other local accounts
+  # can read any process's arguments, and .ui.sampleText is whatever the user
+  # typed. printf is a builtin, so the value never appears in an argv either.
   if [[ -n "$engine" ]]; then
-    jq --arg engine "$engine" --arg value "$value" \
+    printf '%s' "$value" | jq --arg engine "$engine" --rawfile value /dev/stdin \
       '.ocr[$engine] = (if (.ocr[$engine]|type) == "object" then .ocr[$engine] else {} end)
        | .ocr[$engine].langs = $value' "$config_file" >"$tmp"
   elif [[ "$path" == .rate || "$path" == .maxChars || "$path" == .ocr.minConfidence ||
@@ -216,9 +219,9 @@ tts_config_set_unlocked() { # jq path, JSON-or-string value
           "$path" == .ui.lastTab || "$path" == .sanitizer.inlineCode ||
           "$path" == .sanitizer.announceCodeBlocks || "$path" == .sanitizer.stripMarkdown ||
           "$path" == .sanitizer.expandUnits ]]; then
-    jq --argjson value "$value" "$path = \$value" "$config_file" >"$tmp"
+    printf '%s' "$value" | jq --rawfile value /dev/stdin "$path = (\$value | fromjson)" "$config_file" >"$tmp"
   else
-    jq --arg value "$value" "$path = \$value" "$config_file" >"$tmp"
+    printf '%s' "$value" | jq --rawfile value /dev/stdin "$path = \$value" "$config_file" >"$tmp"
   fi
   [[ -s "$tmp" ]] || { rm -f "$tmp"; return 1; }
   chmod 600 "$tmp" || { rm -f "$tmp"; return 1; }
