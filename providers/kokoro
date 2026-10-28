@@ -20,7 +20,7 @@ source "$TTS_PLUGIN_DIR/lib/play.sh"
 KPY="${KOKORO_PYTHON:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/kokoro/bin/python}"
 if [[ ! -x "$KPY" ]]; then
   echo "speak: kokoro not installed." >&2
-  echo "  Install it from the Provider tab." >&2
+  echo "  Install it from the Providers tab." >&2
   notify-send -a "Speak" "Kokoro not installed" "See: speak --help" 2>/dev/null
   exit 127
 fi
@@ -30,8 +30,8 @@ fi
 if [[ -z "${KOKORO_PYTHON:-}" ]]; then
   ENGINE_DIR="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/kokoro"
   if [[ "$(cat "$ENGINE_DIR/.lock-sha256" 2>/dev/null)" != "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/kokoro.lock" | cut -d' ' -f1)" ]]; then
-    echo "speak: kokoro was installed by an earlier release; reinstall it from the Provider tab." >&2
-    notify-send -a "Speak" "Kokoro needs reinstalling" "Reinstall it from the Provider tab." 2>/dev/null
+    echo "speak: kokoro was installed by an earlier release; reinstall it from the Providers tab." >&2
+    notify-send -a "Speak" "Kokoro needs reinstalling" "Reinstall it from the Providers tab." 2>/dev/null
     exit 127
   fi
 fi
@@ -50,9 +50,9 @@ verify_model() { # <relative path>
   local want got
   want="$(jq -r --arg f "$1" '.kokoro.files[$f].sha256 // empty' "$MANIFEST" 2>/dev/null)"
   [[ "$want" =~ ^[0-9a-f]{64}$ ]] || { echo "speak: kokoro: $1 is not a verified model file" >&2; exit 65; }
-  [[ -f "$MODELS/$1" && ! -L "$MODELS/$1" ]] || { echo "speak: kokoro: $1 is missing; reinstall Kokoro from the Provider tab" >&2; exit 127; }
+  [[ -f "$MODELS/$1" && ! -L "$MODELS/$1" ]] || { echo "speak: kokoro: $1 is missing; reinstall Kokoro from the Providers tab" >&2; exit 127; }
   got="$(sha256sum "$MODELS/$1" | cut -d' ' -f1)"
-  [[ "$got" == "$want" ]] || { echo "speak: kokoro: $1 failed verification; reinstall Kokoro from the Provider tab" >&2; exit 65; }
+  [[ "$got" == "$want" ]] || { echo "speak: kokoro: $1 failed verification; reinstall Kokoro from the Providers tab" >&2; exit 65; }
 }
 verify_model config.json
 verify_model kokoro-v1_0.pth

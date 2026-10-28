@@ -111,6 +111,10 @@ def ask(args) -> int:
     except OSError:
         return 75
     with client:
+        # The request is the user's text. A server run by another account
+        # gets nothing; 75 makes the provider start its own.
+        if not peer_is_owner(client):
+            return 75
         client.sendall(json.dumps(request).encode() + b"\n")
         received = 0
         while True:

@@ -3203,6 +3203,120 @@ class LanguageNameTableTests(unittest.TestCase):
         self.assertEqual(len(codes), len(set(codes)))
 
 
+class KokoroWarmSocketTests(unittest.TestCase):
+    """The warm engine's socket carries the text being read, so it must never
+    sit where another account could have put the directory or the server."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        base = Path(self.temp.name)
+        engine = base / "data" / "engines" / "kokoro_onnx"
+        (engine / "bin").mkdir(parents=True)
+        (engine / "models").mkdir()
+        lock = (ROOT / "lib" / "engines" / "kokoro_onnx.lock").read_bytes()
+        (engine / ".lock-sha256").write_text(hashlib.sha256(lock).hexdigest() + "\n")
+        # Sparse files of the shipped sizes, with the stamp that marks them
+        # verified, stand in for the 350 MB of real model data.
+        files = json.loads((ROOT / "lib" / "engines" / "models.json").read_text())["kokoro_onnx"]["files"]
+        for name, meta in files.items():
+            model = engine / "models" / name
+            with open(model, "wb") as handle:
+                handle.truncate(meta["size"])
+            st = model.stat()
+            (engine / "models" / f".{name}.verified").write_text(
+                f"{meta['sha256']} {st.st_ino}:{st.st_size}:{int(st.st_mtime)}\n")
+        self.log = base / "engine.log"
+        python = engine / "bin" / "python"
+        python.write_text(
+            "#!/bin/bash\n"
+            'printf "%s\\n" "${*:2}" >> "$KOKORO_STUB_LOG"\n'
+            'if [[ "$2" == serve ]]; then\n'
+            '  while [[ $# -gt 0 ]]; do [[ "$1" == --socket ]] && sock="$2"; shift; done\n'
+            "  python3 -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' \"$sock\"\n"
+            "fi\n"
+        )
+        python.chmod(0o755)
+        config = base / "config.json"
+        config.write_text(json.dumps({"kokoro_onnx": {"keepWarm": 10}}))
+        self.state = base / "state"
+        self.env = {**os.environ, "TTS_PLUGIN_DIR": str(ROOT), "TTS_CONFIG": str(config),
+                    "TTS_DATA_DIR": str(base / "data"), "TTS_SILENT": "1",
+                    "XDG_STATE_HOME": str(self.state), "KOKORO_STUB_LOG": str(self.log)}
+        self.env.pop("XDG_RUNTIME_DIR", None)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def speak(self):
+        return subprocess.run([ROOT / "providers" / "kokoro_onnx"], input="hello",
+                              text=True, capture_output=True, env=self.env, timeout=60)
+
+    def test_without_a_runtime_dir_the_socket_stays_in_private_state(self):
+        run = self.state / "omarchy-tts-local" / "run"
+        run.mkdir(parents=True, mode=0o755)
+        run.chmod(0o755)
+        result = self.speak()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.log.read_text().splitlines()
+        self.assertEqual([c.split()[0] for c in calls], ["serve", "ask"])
+        for call in calls:
+            self.assertIn(f"--socket {run}/kokoro_onnx.sock", call)
+        self.assertNotIn("/tmp/omarchy-tts-local", self.log.read_text())
+        self.assertEqual(run.stat().st_mode & 0o777, 0o700)
+
+    def test_a_directory_it_cannot_trust_skips_the_warm_engine(self):
+        elsewhere = Path(self.temp.name, "someone-else")
+        elsewhere.mkdir()
+        (self.state / "omarchy-tts-local").mkdir(parents=True)
+        (self.state / "omarchy-tts-local" / "run").symlink_to(elsewhere)
+        result = self.speak()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([c.split()[0] for c in self.log.read_text().splitlines()], ["once"])
+        self.assertEqual(list(elsewhere.iterdir()), [])
+
+    def test_ask_sends_nothing_to_a_server_run_by_another_account(self):
+        import socket
+        import threading
+        name = f"_omarchy_tts_kokoro_engine_{time.time_ns()}"
+        loader = importlib.machinery.SourceFileLoader(
+            name, str(ROOT / "lib" / "kokoro_onnx_engine.py"))
+        engine = importlib.util.module_from_spec(importlib.util.spec_from_loader(name, loader))
+        loader.exec_module(engine)
+        path = str(Path(self.temp.name, "engine.sock"))
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(path)
+        listener.listen(2)
+        listener.settimeout(10)
+        received = []
+
+        def serve_twice():
+            for _ in range(2):
+                connection, _ = listener.accept()
+                with connection:
+                    # One request line, then hang up like a server with
+                    # nothing to say; a refused client sends no line at all.
+                    data = b""
+                    while b"\n" not in data and (chunk := connection.recv(65536)):
+                        data += chunk
+                    received.append(data)
+
+        server = threading.Thread(target=serve_twice)
+        server.start()
+        args = unittest.mock.Mock(socket=path, voice="af_heart", speed=1.0, lang="en-us")
+        request = {"text": "private words", "voice": "af_heart", "speed": 1.0, "lang": "en-us"}
+        with unittest.mock.patch.object(engine, "read_request_fd3", return_value=request):
+            real_uid = os.getuid()
+            with unittest.mock.patch.object(engine.os, "getuid", return_value=real_uid + 1):
+                self.assertEqual(engine.ask(args), 75)
+            # The same server, now owned by this account, gets the request.
+            with contextlib.redirect_stdout(io.TextIOWrapper(io.BytesIO())):
+                engine.ask(args)
+        server.join(10)
+        listener.close()
+        self.assertEqual(received[0], b"")
+        self.assertIn(b"private words", received[1])
+
+
 class CpuSupportTests(unittest.TestCase):
     """The engines' pinned NumPy is built for x86-64-v2. A processor without
     it must get a plain sentence before any download, not a NumPy traceback."""

@@ -26,16 +26,16 @@ ENGINE_DIR="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/$ENGIN
 KPY="$ENGINE_DIR/bin/python"
 if [[ ! -x "$KPY" ]]; then
   echo "speak: kokoro_onnx ($DEVICE) not installed." >&2
-  echo "  Install it from the Provider tab." >&2
-  notify-send -a "Speak" "Kokoro ONNX not installed" "Install it from the Provider tab." 2>/dev/null
+  echo "  Install it from the Providers tab." >&2
+  notify-send -a "Speak" "Kokoro ONNX not installed" "Install it from the Providers tab." 2>/dev/null
   exit 127
 fi
 
 # An environment this release did not build from its shipped lock is not
 # an installed engine, whatever it contains.
 if [[ "$(cat "$ENGINE_DIR/.lock-sha256" 2>/dev/null)" != "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/$ENGINE_NAME.lock" | cut -d' ' -f1)" ]]; then
-  echo "speak: kokoro_onnx was installed by an earlier release; reinstall it from the Provider tab." >&2
-  notify-send -a "Speak" "Kokoro ONNX needs reinstalling" "Reinstall it from the Provider tab." 2>/dev/null
+  echo "speak: kokoro_onnx was installed by an earlier release; reinstall it from the Providers tab." >&2
+  notify-send -a "Speak" "Kokoro ONNX needs reinstalling" "Reinstall it from the Providers tab." 2>/dev/null
   exit 127
 fi
 
@@ -59,13 +59,13 @@ verify_model() { # <file name>
   want="$(jq -r --arg f "$1" '.kokoro_onnx.files[$f].sha256 // empty' "$MANIFEST" 2>/dev/null)"
   size="$(jq -r --arg f "$1" '.kokoro_onnx.files[$f].size // empty' "$MANIFEST" 2>/dev/null)"
   [[ "$want" =~ ^[0-9a-f]{64}$ ]] || { echo "speak: kokoro_onnx: $1 is not a verified model file" >&2; exit 65; }
-  [[ -f "$MODELS/$1" && ! -L "$MODELS/$1" ]] || { echo "speak: kokoro_onnx: $1 is missing; reinstall it from the Provider tab" >&2; exit 127; }
+  [[ -f "$MODELS/$1" && ! -L "$MODELS/$1" ]] || { echo "speak: kokoro_onnx: $1 is missing; reinstall it from the Providers tab" >&2; exit 127; }
   identity="$(stat -c '%i:%s:%Y' "$MODELS/$1")"
-  [[ "${identity#*:}" == "$size":* ]] || { echo "speak: kokoro_onnx: $1 failed verification; reinstall it from the Provider tab" >&2; exit 65; }
+  [[ "${identity#*:}" == "$size":* ]] || { echo "speak: kokoro_onnx: $1 failed verification; reinstall it from the Providers tab" >&2; exit 65; }
   stamp_file="$MODELS/.$1.verified"
   [[ ! -L "$stamp_file" && "$(cat "$stamp_file" 2>/dev/null)" == "$want $identity" ]] && return 0
   got="$(sha256sum "$MODELS/$1" | cut -d' ' -f1)"
-  [[ "$got" == "$want" ]] || { echo "speak: kokoro_onnx: $1 failed verification; reinstall it from the Provider tab" >&2; exit 65; }
+  [[ "$got" == "$want" ]] || { echo "speak: kokoro_onnx: $1 failed verification; reinstall it from the Providers tab" >&2; exit 65; }
   printf '%s %s\n' "$want" "$identity" > "$stamp_file" 2>/dev/null || true
 }
 verify_model kokoro-v1.0.onnx
@@ -82,9 +82,19 @@ TEXT="$(cat)"
 # and it exits by itself after .kokoro_onnx.keepWarm idle minutes.
 KEEP_WARM="$(jq -r '.kokoro_onnx.keepWarm // 10' "$TTS_CONFIG" 2>/dev/null)"
 [[ "$KEEP_WARM" =~ ^[0-9]+$ ]] || KEEP_WARM=10
-if [[ "$KEEP_WARM" -gt 0 ]]; then
-  RUN_DIR="${XDG_RUNTIME_DIR:-/tmp}/omarchy-tts-local"
-  mkdir -p "$RUN_DIR" && chmod 700 "$RUN_DIR"
+# The socket carries the text being read, so it lives only in a directory
+# this account owns. Without a session runtime dir that is the owner-only
+# XDG state directory speak itself uses, never sticky /tmp, where another
+# account could create the directory or the socket first. Anything else
+# skips the warm engine rather than risk handing the text to someone else.
+RUN_DIR="${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/omarchy-tts-local}"
+RUN_DIR="${RUN_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-tts-local/run}"
+private_run_dir() {
+  [[ ! -L "$RUN_DIR" ]] && mkdir -p "$RUN_DIR" 2>/dev/null &&
+    [[ ! -L "$RUN_DIR" && -d "$RUN_DIR" && "$(stat -c %u "$RUN_DIR" 2>/dev/null)" == "$UID" ]] &&
+    chmod 700 "$RUN_DIR" 2>/dev/null
+}
+if [[ "$KEEP_WARM" -gt 0 ]] && private_run_dir; then
   SOCKET="$RUN_DIR/$ENGINE_NAME.sock"
   ask_server() {
     # espeak-ng and onnxruntime are chatty on stderr; none of it is actionable.
