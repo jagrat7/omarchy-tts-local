@@ -90,7 +90,7 @@ KEEP_WARM="$(jq -r '.kokoro_onnx.keepWarm // 10' "$TTS_CONFIG" 2>/dev/null)"
 RUN_DIR="${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/omarchy-tts-local}"
 RUN_DIR="${RUN_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-tts-local/run}"
 private_run_dir() {
-  [[ ! -L "$RUN_DIR" ]] && mkdir -p -m 700 "$RUN_DIR" 2>/dev/null &&
+  [[ ! -L "$RUN_DIR" ]] && mkdir -p "$RUN_DIR" 2>/dev/null &&
     [[ ! -L "$RUN_DIR" && -d "$RUN_DIR" && "$(stat -c %u "$RUN_DIR" 2>/dev/null)" == "$UID" ]] &&
     chmod 700 "$RUN_DIR" 2>/dev/null
 }
