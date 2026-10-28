@@ -6,7 +6,8 @@
 # probe: [[ -x "${EASYOCR_PYTHON:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/easyocr/bin/python}" && -s "${EASYOCR_MODELS:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/easyocr/models}/craft_mlt_25k.pth" ]] && ( [[ -n "${EASYOCR_PYTHON:-}" ]] || [[ "$(cat "${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/easyocr/.lock-sha256" 2>/dev/null)" == "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/easyocr.lock" | cut -d' ' -f1)" ]] )
 # install: easyocr
 # confidence: true
-# Reads a PNG on stdin, writes recognised text on stdout.
+# Reads an image on stdin (TTS_OCR_IMAGE_MIME, PNG by default), writes
+# recognised text on stdout.
 set -uo pipefail
 umask 077
 source "$TTS_PLUGIN_DIR/lib/play.sh"
@@ -122,17 +123,32 @@ done
 # Per-box confidence honours the same floor as tesseract, and paragraph mode
 # hands the sanitizer reflowed lines rather than one box per word.
 LANGS_JSON="$(printf '%s\n' "${codes[@]}" | jq -Rsc 'split("\n")|map(select(length>0))')" \
-MINCONF="$MINCONF" MODELS="$MODELS" IMG="$img" \
+MINCONF="$MINCONF" MODELS="$MODELS" IMG="$img" MIME="${TTS_OCR_IMAGE_MIME:-image/png}" \
 "$EPY" - <<'PYEOF' 2>"$errlog"
 import json, os, sys, warnings
 warnings.filterwarnings("ignore")
-import easyocr
+import cv2, easyocr, numpy
+from PIL import Image
 langs = json.loads(os.environ["LANGS_JSON"])
 floor = int(os.environ["MINCONF"]) / 100.0
+# Decode here, with only the decoder for the type speak checked. Given a path,
+# EasyOCR would hand the bytes to OpenCV and scikit-image, which choose a
+# decoder from the content, JPEG 2000 included. readtext is detect on the RGB
+# image followed by recognize on its greyscale, so those are called directly.
+decoder = {"image/png": "PNG", "image/jpeg": "JPEG", "image/webp": "WEBP",
+           "image/bmp": "BMP", "image/tiff": "TIFF"}[os.environ["MIME"]]
+try:
+    with Image.open(os.environ["IMG"], formats=[decoder]) as image:
+        rgb = numpy.array(image.convert("RGB"))
+except (OSError, ValueError):
+    sys.exit(65)
+grey = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
 reader = easyocr.Reader(langs, gpu=False, verbose=False,
                         model_storage_directory=os.environ["MODELS"], download_enabled=False)
+horizontal, free = reader.detect(rgb, reformat=False)
 kept = []
-for box, text, conf in reader.readtext(os.environ["IMG"], paragraph=False, detail=1):
+for box, text, conf in reader.recognize(grey, horizontal[0], free[0], detail=1,
+                                        paragraph=False, reformat=False):
     if conf >= floor and text.strip():
         kept.append((box, text))
 # Read in visual order: rows by the box's top edge, then left to right.
@@ -150,7 +166,10 @@ PYEOF
 rc=$?
 # torch is chatty on stderr; surface only the failure line so a broken
 # install or a rejected language combination is loud instead of silent.
-if [[ $rc -ne 0 ]]; then
+if [[ $rc -eq 65 ]]; then
+  printf 'speak: EasyOCR: the image is not a readable %s\n' "${TTS_OCR_IMAGE_MIME:-image/png}" >&2
+  exit 65
+elif [[ $rc -ne 0 ]]; then
   detail="$(grep -E '^[A-Za-z]+Error|^ValueError|^RuntimeError' "$errlog" | tail -n 1)"
   if [[ -n "$detail" ]]; then
     printf 'speak: EasyOCR: %s\n' "$detail" >&2

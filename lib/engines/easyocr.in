@@ -1,1 +1,4 @@
 easyocr==1.7.2
+# GHSA-78g4-xqwv-q3g8: Pillow 11.1.0 through 12.3.0 bundle an OpenJPEG with a
+# heap overflow reachable from Image.open; 13.0.0 is the first fixed release.
+pillow==13.0.0

@@ -706,6 +706,23 @@ capture_command_bounded() ( # maximum-bytes command [args...] -> bounded stdout
   cat "$output"
 )
 
+# A clipboard image comes from whatever program set the clipboard, and image
+# libraries pick a decoder from the bytes, not from the type on offer. Only
+# bytes that begin like the advertised type go on to an OCR engine, so a
+# JPEG 2000 or other codestream labelled image/png never reaches a decoder.
+image_matches_mime() { # file mime
+  local magic
+  magic="$(head -c 12 "$1" | od -An -v -tx1 | tr -d ' \n')"
+  case "$2" in
+    image/png) [[ "$magic" == 89504e470d0a1a0a* ]] ;;
+    image/jpeg) [[ "$magic" == ffd8ff* ]] ;;
+    image/webp) [[ "$magic" == 52494646????????57454250 ]] ;;
+    image/bmp) [[ "$magic" == 424d* ]] ;;
+    image/tiff) [[ "$magic" == 49492a00* || "$magic" == 4d4d002a* ]] ;;
+    *) return 1 ;;
+  esac
+}
+
 run_ocr_bounded() ( # engine image -> bounded recognized text
   local engine="$1" image="$2" output rc=0
   output="$(mktemp "$STATE_DIR/.ocr-output.XXXXXX")" || return 1
@@ -1133,6 +1150,8 @@ else
             die "clipboard image is larger than the 50 MiB safety limit"
           [[ $capture_rc -eq 0 ]] || die "could not read the clipboard image"
           [[ -s "$PNG" ]] || die "clipboard image is empty"
+          image_matches_mime "$PNG" "$image_mime" ||
+            die "clipboard image is not the $image_mime it claims to be"
           ocr_rc=0; TEXT="$(run_ocr_bounded "$OCR_BIN" "$PNG")" || ocr_rc=$?
           record_ocr_outcome "$OCR_ENGINE" "$ocr_rc" "$TEXT" "$ocr_fingerprint"
           # The engine has already said why it refused; do not relabel its
