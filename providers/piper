@@ -17,7 +17,7 @@ ENGINE_DIR="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/piper"
 PIPER_BIN="$ENGINE_DIR/bin/piper"
 if [[ "$(cat "$ENGINE_DIR/.lock-sha256" 2>/dev/null)" != "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/piper.lock" | cut -d' ' -f1)" ]]; then PIPER_BIN=""; fi
 [[ -x "$PIPER_BIN" ]] || PIPER_BIN="$(command -v piper || true)"
-[[ -n "$PIPER_BIN" ]] || need piper "install it from the Provider tab"
+[[ -n "$PIPER_BIN" ]] || need piper "install it from the Providers tab"
 
 VOICES_DIR="${PIPER_VOICES_DIR:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/voices/piper}"
 # Voice model and sidecar are a single installation. Hold a shared lock while
