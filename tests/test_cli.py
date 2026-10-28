@@ -181,7 +181,7 @@ class CliConfigTests(unittest.TestCase):
             "  [[ ${MIXED_CLIPBOARD:-0} == 1 ]] && printf 'text/plain;charset=utf-8\\n'\n"
             "  printf 'image/png\\n'\n"
             "elif [[ $* == *text/plain* ]]; then printf 'Preferred clipboard text.'\n"
-            "else printf 'fake-png-bytes'; fi\n"
+            "else printf '\\x89PNG\\r\\n\\x1a\\nfake-png-bytes'; fi\n"
         )
         wl_paste.chmod(0o755)
         ocr_bin = ocr / "testocr"
@@ -208,6 +208,50 @@ class CliConfigTests(unittest.TestCase):
         self.run_speak("--clipboard", "--provider", "capturetest")
         self.assertEqual(captured.read_text().strip(),
                          "Preferred clipboard text.")
+
+    def test_clipboard_image_must_be_the_type_it_claims(self):
+        """Image decoders choose by content, so a JPEG 2000 codestream offered
+        as image/png would reach OpenJPEG. Bytes that do not begin like the
+        advertised type never reach an OCR engine."""
+        tools = Path(self.temp.name, "tools")
+        ocr = Path(self.temp.name, "omarchy-tts-local", "ocr")
+        tools.mkdir()
+        ocr.mkdir(parents=True)
+        marker = Path(self.temp.name, "ocr-ran")
+        wl_paste = tools / "wl-paste"
+        wl_paste.write_text(
+            "#!/usr/bin/env bash\n"
+            "if [[ ${1:-} == --list-types ]]; then printf '%s\\n' \"$CLIP_MIME\"\n"
+            "else cat \"$CLIP_FILE\"; fi\n"
+        )
+        wl_paste.chmod(0o755)
+        ocr_bin = ocr / "testocr"
+        ocr_bin.write_text(
+            "#!/usr/bin/env bash\n# desc: test OCR\ncat >/dev/null\n"
+            "printf ran > \"$OCR_MARKER\"\nprintf 'Words.\\n'\n"
+        )
+        ocr_bin.chmod(0o755)
+        clip = Path(self.temp.name, "clip")
+        self.env.update(PATH=f"{tools}:{self.env['PATH']}", CLIP_FILE=str(clip),
+                        OCR_MARKER=str(marker))
+        self.run_speak("--set", ".ocr.engine", "testocr")
+        codestream = b"\xffO\xffQ\x00\x2f\x00\x00" + b"\x00" * 40
+        jp2 = b"\x00\x00\x00\x0cjP  \r\n\x87\n" + b"\x00" * 40
+        for mime, data in (("image/png", codestream), ("image/jpeg", jp2),
+                           ("image/webp", b"RIFF\x10\x00\x00\x00WAVEfmt "),
+                           ("image/tiff", jp2)):
+            with self.subTest(mime=mime):
+                clip.write_bytes(data)
+                result = subprocess.run([SPEAK, "--clipboard"], capture_output=True, text=True,
+                                        env={**self.env, "CLIP_MIME": mime})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"not the {mime} it claims to be", result.stderr)
+                self.assertFalse(marker.exists())
+        # The real thing still goes through.
+        clip.write_bytes((ROOT / "lib" / "ocr-probe.png").read_bytes())
+        result = subprocess.run([SPEAK, "--clipboard", "--provider", "missing-provider"],
+                                capture_output=True, text=True, env={**self.env, "CLIP_MIME": "image/png"})
+        self.assertTrue(marker.exists(), result.stderr)
 
     def test_screen_capture_never_falls_back_to_all_monitors(self):
         tools = Path(self.temp.name, "screen-tools")

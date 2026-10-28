@@ -31,8 +31,10 @@ case "${1:-}" in
       # kokoro-onnx depends on the CPU onnxruntime wheel, which ships the same
       # `onnxruntime` module as onnxruntime-gpu. Installing both lets either
       # one win, so the GPU closure leaves the CPU wheel out.
-      extra=()
-      [[ "$engine" == kokoro_onnx_gpu ]] && extra=(--no-emit-package onnxruntime)
+      # A security release newer than EXCLUDE_NEWER is admitted by name only,
+      # so the fix lands without moving every other pin forward with it.
+      extra=(--exclude-newer-package "pillow=2026-10-17T00:00:00Z")
+      [[ "$engine" == kokoro_onnx_gpu ]] && extra+=(--no-emit-package onnxruntime)
       uv pip compile --quiet --generate-hashes --only-binary :all: --python-version 3.12 \
         --find-links "$spec/wheels" \
         --python-platform x86_64-unknown-linux-gnu --no-header --no-annotate \

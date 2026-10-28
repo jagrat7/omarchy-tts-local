@@ -135,7 +135,10 @@ tools/pin-engines models    # re-fetch every pinned model artefact and confirm i
 
 The locks are complete closures for Linux x86_64 / Python 3.12, compiled
 against the index as it stood at `lib/engines/EXCLUDE_NEWER`; move that
-instant forward to pick up newer releases, then re-run `lock`. CI fails if the
+instant forward to pick up newer releases, then re-run `lock`. A security
+release newer than that instant is admitted by name with
+`--exclude-newer-package` in `tools/pin-engines` (today Pillow 13.0.0, for
+GHSA-78g4-xqwv-q3g8), so the fix lands without moving every other pin. CI fails if the
 locks do not regenerate byte-for-byte or if any requirement lacks a wheel.
 
 A dependency with no published wheel (today only `docopt`, via
