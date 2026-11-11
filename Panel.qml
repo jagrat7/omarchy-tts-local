@@ -14,6 +14,9 @@ Panel {
   manageIpc: false
 
   property var anchorItem: null
+  // The visible card's content area. The root Item sits in the bar's window,
+  // so anything measuring room on the panel measures against this instead.
+  readonly property Item card: keyCatcher
   property var hostWidget: null
   readonly property var barIdentity: hostWidget || root
   readonly property color fg: Commons.Color.popups.text
