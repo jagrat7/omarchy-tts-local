@@ -307,9 +307,12 @@ class QmlContractTests(unittest.TestCase):
         # The picker sits at the panel's bottom edge, so its list opens upward
         # when there is more room above than below.
         self.assertIn("Component.onCompleted: root.openUpwardWhenCramped(voiceDropdown)", overview)
-        self.assertIn("return below < needed && top > below ? -needed : anchor.height + gap", overview)
-        # It measures against the whole panel, not the Overview alone.
-        self.assertIn("var top = anchor.mapToItem(panel, 0, 0).y", overview)
+        self.assertIn("popup.y = below < needed && top > below ? -needed : anchor.height + gap", overview)
+        # It measures against the visible card, not the root Panel Item, which
+        # lives in the bar's window, and re-places the list on every open.
+        self.assertIn("popup.aboutToShow.connect(", overview)
+        self.assertIn("var top = anchor.mapToItem(card, 0, 0).y", overview)
+        self.assertIn("readonly property Item card: keyCatcher", self.panel)
         self.assertIn('"Open Providers', overview)
 
     def test_speed_goes_live_while_speaking_and_keeps_the_override(self):

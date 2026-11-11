@@ -69,12 +69,17 @@ Column {
     // and then reopen it on click. Only presses outside the field close it
     // now, so a second click on the field toggles it shut.
     popup.closePolicy = Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+    // Measure against the card the user sees. `panel` itself is the plugin's
+    // root Item and lives in the bar's window, so its height says nothing
+    // about the room left in the card. Place the list each time it opens,
+    // since the card's height and scroll position move after load.
     var anchor = popup.parent, gap = Style.spacing.xxs
-    popup.y = Qt.binding(function() {
-      var top = anchor.mapToItem(panel, 0, 0).y
-      var below = panel.height - top - anchor.height
+    popup.aboutToShow.connect(function() {
+      var card = panel.card
+      var top = anchor.mapToItem(card, 0, 0).y
+      var below = card.height - top - anchor.height
       var needed = popup.height + gap
-      return below < needed && top > below ? -needed : anchor.height + gap
+      popup.y = below < needed && top > below ? -needed : anchor.height + gap
     })
     root.voicePopup = popup
   }
